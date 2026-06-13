@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --font-geist-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-geist-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #fffdf8;
+  color: #171717;
+}
+
+button,
+input,
+textarea,
+select {
+  border-radius: 0;
+}
+
+::selection {
+  background: #f1d7b5;
+}

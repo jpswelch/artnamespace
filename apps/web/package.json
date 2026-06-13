@@ -1,0 +1,40 @@
+{
+  "name": "@artnamespace/web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint src --max-warnings=0",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "copy:p5": "node scripts/copy-p5.mjs",
+    "postinstall": "node scripts/copy-p5.mjs"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.62.16",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.475.0",
+    "next": "^16.0.0",
+    "p5": "^1.11.2",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "viem": "^2.35.0",
+    "wagmi": "^2.14.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.18.0",
+    "eslint-config-next": "^16.0.0",
+    "postcss": "^8.5.1",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,16 @@
+node_modules
+.pnpm-store
+.next
+out
+dist
+coverage
+.env
+.env.local
+.env.*.local
+cache
+broadcast
+lib
+.vercel
+apps/web/public/vendor/p5.min.js
+*.log
+.DS_Store

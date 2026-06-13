@@ -1,0 +1,16 @@
+{
+  "name": "artnamespace",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.1.2",
+  "scripts": {
+    "dev": "pnpm --filter @artnamespace/web dev",
+    "build": "pnpm --filter @artnamespace/web build",
+    "lint": "pnpm --filter @artnamespace/web lint",
+    "test": "pnpm --filter @artnamespace/web test",
+    "test:run": "pnpm --filter @artnamespace/web test:run",
+    "contracts:test": "forge test --root contracts --offline",
+    "contracts:build": "forge build --root contracts",
+    "copy:p5": "pnpm --filter @artnamespace/web copy:p5"
+  }
+}
