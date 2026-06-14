@@ -1,11 +1,29 @@
 import type { WalrusUploadResult } from "./art/types";
 
+const DEFAULT_WALRUS_AGGREGATOR_URL = "https://aggregator.walrus-testnet.walrus.space";
+
 export function walrusUri(blobId: string) {
   return `walrus://${blobId}`;
 }
 
+export function isWalrusUri(uri: string | undefined): uri is string {
+  return Boolean(uri?.startsWith("walrus://"));
+}
+
 export function blobIdFromWalrusUri(uri: string) {
   return uri.startsWith("walrus://") ? uri.slice("walrus://".length) : uri;
+}
+
+export function walrusAggregatorUrl() {
+  return (
+    process.env.NEXT_PUBLIC_WALRUS_AGGREGATOR_URL ||
+    process.env.WALRUS_AGGREGATOR_URL ||
+    DEFAULT_WALRUS_AGGREGATOR_URL
+  ).replace(/\/$/, "");
+}
+
+export function walrusDirectUrl(uri: string) {
+  return `${walrusAggregatorUrl()}/v1/blobs/${encodeURIComponent(blobIdFromWalrusUri(uri))}`;
 }
 
 export function walrusProxyUrl(uri: string) {

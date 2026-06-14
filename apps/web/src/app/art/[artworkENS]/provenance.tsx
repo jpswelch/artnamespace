@@ -7,7 +7,7 @@ import { StatusPill } from "@/components/status-pill";
 import { ENS_TEXT_KEYS } from "@/lib/constants";
 import { loadArtwork } from "@/lib/local-cache";
 import type { ProvenanceManifest } from "@/lib/art/types";
-import { walrusProxyUrl } from "@/lib/walrus";
+import { walrusDirectUrl, walrusProxyUrl } from "@/lib/walrus";
 
 export function ArtworkProvenance({ artworkENS }: { artworkENS: string }) {
   const [records, setRecords] = useState<Record<string, string>>({});
@@ -103,8 +103,8 @@ export function ArtworkProvenance({ artworkENS }: { artworkENS: string }) {
           </div>
 
           {manifest?.metadataURI ? (
-            <a className="inline-flex items-center gap-2 border border-ink px-4 py-2 text-sm hover:bg-paper" href={walrusProxyUrl(manifest.metadataURI)} target="_blank">
-              Metadata JSON <ExternalLink size={16} />
+            <a className="inline-flex items-center gap-2 border border-ink px-4 py-2 text-sm hover:bg-paper" href={walrusDirectUrl(manifest.metadataURI)} target="_blank">
+              Open Metadata on Walrus <ExternalLink size={16} />
             </a>
           ) : null}
         </aside>

@@ -12,7 +12,7 @@ import { getFactoryAddress } from "@/lib/constants";
 import { truncateMiddle } from "@/lib/format";
 import { formatMintPrice } from "@/lib/price";
 import { useAccountDisplay } from "@/lib/use-account-display";
-import { walrusProxyUrl } from "@/lib/walrus";
+import { walrusDirectUrl, walrusProxyUrl } from "@/lib/walrus";
 
 type ProjectSummary = {
   address: `0x${string}`;
@@ -307,8 +307,8 @@ export function ProfileView() {
                     <Link className="inline-flex border border-ink px-3 py-2 text-sm hover:bg-paper" href={`/collection/${project.collectionENS}`}>
                       Open Collection
                     </Link>
-                    <a className="inline-flex items-center gap-2 border border-line px-3 py-2 text-sm hover:border-ink" href={walrusProxyUrl(project.algorithmURI)} target="_blank">
-                      Algorithm <ExternalLink size={15} />
+                    <a className="inline-flex items-center gap-2 border border-line px-3 py-2 text-sm hover:border-ink" href={walrusDirectUrl(project.algorithmURI)} target="_blank">
+                      Algorithm on Walrus <ExternalLink size={15} />
                     </a>
                   </div>
                 </article>
@@ -342,7 +342,7 @@ export function ProfileView() {
                       <span className="font-mono text-xs text-neutral-500">#{item.tokenId}</span>
                     </div>
                     <p className="mt-2 text-sm text-neutral-700">{item.project.name}</p>
-                    <a className="mt-3 block truncate font-mono text-xs text-neutral-500 underline-offset-4 hover:underline" href={walrusProxyUrl(item.metadataURI)} target="_blank">
+                    <a className="mt-3 block truncate font-mono text-xs text-neutral-500 underline-offset-4 hover:underline" href={walrusDirectUrl(item.metadataURI)} target="_blank">
                       {item.metadataURI}
                     </a>
                   </div>
