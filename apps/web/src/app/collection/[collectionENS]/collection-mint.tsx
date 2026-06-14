@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Database, Loader2, Sparkles, Tag } from "lucide-react";
+import { Database, EyeOff, Loader2, Sparkles } from "lucide-react";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import { sepolia } from "wagmi/chains";
-import { formatEther } from "viem";
 import { RenderFrame } from "@/components/render-frame";
 import { RecordTable } from "@/components/record-table";
 import { StatusPill } from "@/components/status-pill";
@@ -13,16 +12,11 @@ import { createSeed, createUniquenessHash, dataUrlToBase64, generateParams, hash
 import { createAlgorithmBundle, samplePackage } from "@/lib/art/sample";
 import type { AlgorithmBundle, CollectionRecord, GeneratedOutput, ProvenanceManifest } from "@/lib/art/types";
 import { artNamespaceProjectAbi } from "@/lib/contracts/artnamespace";
-import {
-  DEFAULT_COLLECTION_SLUG,
-  ENS_TEXT_KEYS,
-  SEPOLIA_CHAIN_ID,
-  getArtworkEns,
-} from "@/lib/constants";
+import { ENS_TEXT_KEYS, SEPOLIA_CHAIN_ID, getArtworkEns } from "@/lib/constants";
 import { writeEnsTextRecords } from "@/lib/ens";
 import { truncateMiddle } from "@/lib/format";
 import { loadCollection, saveArtwork } from "@/lib/local-cache";
-import { formatMintPrice, parseMintPriceEth } from "@/lib/price";
+import { formatMintPrice } from "@/lib/price";
 import { resolveProjectContract } from "@/lib/project";
 import { uploadWalrusArtifact, walrusProxyUrl } from "@/lib/walrus";
 
@@ -34,23 +28,26 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
   const [bundle, setBundle] = useState<AlgorithmBundle>(() => createAlgorithmBundle(samplePackage()));
   const [record, setRecord] = useState<CollectionRecord | null>(null);
   const [ensRecords, setEnsRecords] = useState<Record<string, string>>({});
-  const [output, setOutput] = useState<GeneratedOutput | null>(null);
+  const [renderedOutput, setRenderedOutput] = useState<{ key: string; output: GeneratedOutput } | null>(null);
   const [minting, setMinting] = useState(false);
   const [status, setStatus] = useState("Ready to mint a deterministic output");
   const [error, setError] = useState<string | null>(null);
   const [previewTokenId, setPreviewTokenId] = useState(1);
   const [projectContract, setProjectContract] = useState<`0x${string}` | undefined>();
-  const [projectOwner, setProjectOwner] = useState<`0x${string}` | undefined>();
   const [mintPriceWei, setMintPriceWei] = useState<bigint>(0n);
-  const [priceInputEth, setPriceInputEth] = useState("0");
-  const [updatingPrice, setUpdatingPrice] = useState(false);
 
   const nextSeed = useMemo(() => createSeed(`${collectionENS}-${previewTokenId}`), [collectionENS, previewTokenId]);
   const params = useMemo(() => generateParams(bundle.paramsSchema, nextSeed), [bundle.paramsSchema, nextSeed]);
   const nextTokenId = previewTokenId;
   const artworkENS = getArtworkEns(nextTokenId, collectionENS);
-  const isProjectOwner = Boolean(
-    address && projectOwner && address.toLowerCase() === projectOwner.toLowerCase(),
+  const renderKey = `${artworkENS}-${nextSeed}-${bundle.packageHash}`;
+  const output = renderedOutput?.key === renderKey ? renderedOutput.output : null;
+
+  const handleRendered = useCallback(
+    (generatedOutput: GeneratedOutput) => {
+      setRenderedOutput({ key: renderKey, output: generatedOutput });
+    },
+    [renderKey],
   );
 
   useEffect(() => {
@@ -105,7 +102,7 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
       if (!projectContract || !publicClient) return;
 
       try {
-        const [tokenId, price, owner] = await Promise.all([
+        const [tokenId, price] = await Promise.all([
           publicClient.readContract({
             address: projectContract,
             abi: artNamespaceProjectAbi,
@@ -116,16 +113,9 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
             abi: artNamespaceProjectAbi,
             functionName: "mintPriceWei",
           }),
-          publicClient.readContract({
-            address: projectContract,
-            abi: artNamespaceProjectAbi,
-            functionName: "owner",
-          }),
         ]);
         setPreviewTokenId(Number(tokenId));
         setMintPriceWei(price);
-        setPriceInputEth(formatEther(price));
-        setProjectOwner(owner);
       } catch {
         setStatus("Package contract was found, but it is not reachable on Sepolia yet");
       }
@@ -133,51 +123,6 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
 
     void loadProjectContract();
   }, [projectContract, publicClient]);
-
-  async function updateMintPrice() {
-    if (!projectContract || !address || !walletClient || !publicClient) {
-      setError("Connect the artist wallet and load a package contract before updating price.");
-      return;
-    }
-
-    setUpdatingPrice(true);
-    setError(null);
-
-    try {
-      const nextPrice = parseMintPriceEth(priceInputEth);
-      setStatus("Updating package mint price");
-      const tx = await walletClient.writeContract({
-        account: address,
-        chain: sepolia,
-        address: projectContract,
-        abi: artNamespaceProjectAbi,
-        functionName: "setMintPrice",
-        args: [nextPrice],
-      });
-      await publicClient.waitForTransactionReceipt({ hash: tx });
-      setMintPriceWei(nextPrice);
-
-      setStatus("Writing price record to ENS");
-      await writeEnsTextRecords({
-        publicClient,
-        walletClient,
-        account: address,
-        name: collectionENS,
-        records: {
-          [ENS_TEXT_KEYS.mintPriceWei]: nextPrice.toString(),
-        },
-      });
-      setEnsRecords((current) => ({
-        ...current,
-        [ENS_TEXT_KEYS.mintPriceWei]: nextPrice.toString(),
-      }));
-      setStatus("Mint price updated");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setUpdatingPrice(false);
-    }
-  }
 
   async function mint() {
     if (!output) {
@@ -223,7 +168,7 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
       const paramsHash = hashJson(output.params);
       const uniquenessHash = createUniquenessHash({
         artistENS: bundle.manifest.artistENS,
-        collectionSlug: DEFAULT_COLLECTION_SLUG,
+        collectionSlug: bundle.manifest.slug,
         algorithmHash,
         seed: output.seed,
         paramsHash,
@@ -358,34 +303,46 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
       </div>
 
       <section className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_420px]">
-        <div>
-          <RenderFrame
-            artistENS={bundle.manifest.artistENS}
-            artworkENS={artworkENS}
-            collectionENS={collectionENS}
-            onRendered={setOutput}
-            params={params}
-            seed={nextSeed}
-            sketch={bundle.sketch}
-            tokenId={nextTokenId}
-          />
+        <div className="relative min-h-[min(80vw,520px)] overflow-hidden border border-line bg-white">
+          <div className="absolute -left-[9999px] top-0 h-[520px] w-[520px] opacity-0 pointer-events-none" aria-hidden="true">
+            <RenderFrame
+              artistENS={bundle.manifest.artistENS}
+              artworkENS={artworkENS}
+              collectionENS={collectionENS}
+              onRendered={handleRendered}
+              params={params}
+              seed={nextSeed}
+              sketch={bundle.sketch}
+              tokenId={nextTokenId}
+            />
+          </div>
+          <div className="grid min-h-[min(80vw,520px)] place-items-center p-8 text-center">
+            <div>
+              <EyeOff className="mx-auto mb-4 text-neutral-500" size={32} />
+              <h2 className="font-serif text-3xl">Reveal after mint</h2>
+              <p className="mt-3 max-w-sm text-sm leading-6 text-neutral-700">
+                The next generative output is prepared privately and revealed only after the mint completes.
+              </p>
+              <p className="mt-5 font-mono text-xs text-neutral-500">{output ? "Reveal ready" : "Preparing reveal"}</p>
+            </div>
+          </div>
         </div>
 
         <aside className="space-y-5">
           <div className="border border-line p-4">
-            <h2 className="font-serif text-2xl">Next output</h2>
+            <h2 className="font-serif text-2xl">Mint details</h2>
             <dl className="mt-4 space-y-3 font-mono text-xs">
-              <div>
-                <dt className="text-neutral-500">Seed</dt>
-                <dd className="break-all">{nextSeed}</dd>
-              </div>
               <div>
                 <dt className="text-neutral-500">Artwork ENS</dt>
                 <dd>{artworkENS}</dd>
               </div>
               <div>
+                <dt className="text-neutral-500">Seed</dt>
+                <dd>Hidden until minted</dd>
+              </div>
+              <div>
                 <dt className="text-neutral-500">Features</dt>
-                <dd>{output ? Object.entries(output.features).map(([key, value]) => `${key}: ${value}`).join(" / ") : "rendering"}</dd>
+                <dd>Hidden until minted</dd>
               </div>
             </dl>
           </div>
@@ -404,30 +361,6 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
             {!projectContract ? <p className="mt-2 text-amber-800">Publish this package contract before live minting.</p> : null}
             {error ? <p className="mt-2 text-red-700">{error}</p> : null}
           </div>
-
-          {isProjectOwner ? (
-            <div className="border border-line p-4">
-              <div className="mb-3 flex items-center gap-2">
-                <Tag size={16} />
-                <h2 className="font-serif text-2xl">Mint price</h2>
-              </div>
-              <label className="mb-2 block text-xs uppercase tracking-wide text-neutral-500">Fixed price in ETH</label>
-              <input
-                className="w-full border border-line p-2 font-mono text-sm"
-                inputMode="decimal"
-                onChange={(event) => setPriceInputEth(event.target.value)}
-                value={priceInputEth}
-              />
-              <button
-                className="mt-3 inline-flex w-full items-center justify-center gap-2 border border-ink px-3 py-2 text-sm hover:bg-paper disabled:cursor-not-allowed disabled:border-neutral-300"
-                disabled={updatingPrice}
-                onClick={() => void updateMintPrice()}
-              >
-                {updatingPrice ? <Loader2 className="animate-spin" size={16} /> : null}
-                Update Price
-              </button>
-            </div>
-          ) : null}
 
           <div>
             <div className="mb-3 flex items-center gap-2">
