@@ -1,18 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Check, FileUp, Loader2, Wand2 } from "lucide-react";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import { sepolia } from "wagmi/chains";
 import { isAddress, zeroAddress } from "viem";
-import { RenderFrame } from "@/components/render-frame";
 import { RecordTable } from "@/components/record-table";
 import { StatusPill } from "@/components/status-pill";
 import { createAlgorithmBundle, samplePackage } from "@/lib/art/sample";
-import { createSeed, generateParams } from "@/lib/art/deterministic";
 import { packageHash, parseArtPackage } from "@/lib/art/package";
-import type { ArtPackage, CollectionRecord, GeneratedOutput } from "@/lib/art/types";
+import type { ArtPackage, CollectionRecord } from "@/lib/art/types";
 import { artNamespaceFactoryAbi, artNamespaceProjectAbi } from "@/lib/contracts/artnamespace";
 import { ENS_TEXT_KEYS, getArtistEnsRoot, getCollectionEns, getFactoryAddress } from "@/lib/constants";
 import { readEnsTextRecords, writeEnsTextRecords } from "@/lib/ens";
@@ -24,7 +22,6 @@ import { uploadWalrusArtifact } from "@/lib/walrus";
 export function CreateFlow() {
   const artistRoot = getArtistEnsRoot();
   const [pkg, setPkg] = useState<ArtPackage>(() => samplePackage(artistRoot));
-  const [outputs, setOutputs] = useState<Record<string, GeneratedOutput>>({});
   const [status, setStatus] = useState<string>("Sample package loaded");
   const [error, setError] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
@@ -36,7 +33,6 @@ export function CreateFlow() {
   const collectionEns = getCollectionEns(pkg.manifest.artistENS || artistRoot);
   const algorithmHash = packageHash(pkg);
   const factory = getFactoryAddress();
-  const seeds = useMemo(() => Array.from({ length: 6 }, (_, index) => createSeed(`preview-${index + 1}-${algorithmHash}`)), [algorithmHash]);
 
   useEffect(() => {
     let cancelled = false;
@@ -128,7 +124,6 @@ export function CreateFlow() {
           artistENS: parsed.manifest.artistENS || artistRoot,
         },
       });
-      setOutputs({});
       setPublished(null);
       setStatus("Package validated");
     } catch (err) {
@@ -275,7 +270,7 @@ export function CreateFlow() {
           <StatusPill tone="good">Artist Flow</StatusPill>
           <h1 className="mt-4 font-serif text-5xl">Create Curvefields</h1>
           <p className="mt-3 max-w-2xl leading-7 text-neutral-700">
-            Upload a deterministic p5.js package, preview seeded outputs, store the algorithm on Walrus, and write collection records to ENS.
+            Upload a deterministic p5.js package, store the algorithm on Walrus, deploy the package ERC-721, and write collection records to ENS.
           </p>
         </div>
         <div className="font-mono text-xs text-neutral-600">
@@ -284,8 +279,7 @@ export function CreateFlow() {
         </div>
       </div>
 
-      <section className="grid gap-8 lg:grid-cols-[360px_1fr]">
-        <aside className="space-y-5">
+      <section className="max-w-xl space-y-5">
           <div className="border border-line p-4">
             <label className="mb-3 block text-sm font-medium">Algorithm package</label>
             <input
@@ -301,7 +295,6 @@ export function CreateFlow() {
               className="mt-3 inline-flex items-center gap-2 border border-line px-3 py-2 text-sm hover:border-ink"
               onClick={() => {
                 setPkg(samplePackage(artistRoot));
-                setOutputs({});
                 setPublished(null);
                 setStatus("Sample package loaded");
               }}
@@ -342,32 +335,6 @@ export function CreateFlow() {
             <p className="text-neutral-700">{status}</p>
             {error ? <p className="mt-2 text-red-700">{error}</p> : null}
           </div>
-        </aside>
-
-        <div>
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-serif text-3xl">Deterministic Previews</h2>
-            <span className="font-mono text-xs text-neutral-600">{Object.keys(outputs).length}/6 rendered</span>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {seeds.map((seed, index) => (
-              <div key={seed}>
-                <RenderFrame
-                  artistENS={pkg.manifest.artistENS}
-                  artworkENS={`${String(index + 1).padStart(3, "0")}.${collectionEns}`}
-                  collectionENS={collectionEns}
-                  compact
-                  onRendered={(output) => setOutputs((current) => ({ ...current, [seed]: output }))}
-                  params={generateParams(pkg.paramsSchema, seed)}
-                  seed={seed}
-                  sketch={pkg.sketch}
-                  tokenId={index + 1}
-                />
-                <p className="mt-2 font-mono text-xs text-neutral-600">{truncateMiddle(seed, 12)}</p>
-              </div>
-            ))}
-          </div>
-        </div>
       </section>
 
       {published ? (
