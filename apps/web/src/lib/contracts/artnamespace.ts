@@ -126,6 +126,18 @@ export const artNamespaceProjectAbi = [
   },
   {
     type: "function",
+    name: "configureEnsV2Subnames",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "registry", type: "address" },
+      { name: "resolver", type: "address" },
+      { name: "expiry", type: "uint64" },
+      { name: "roleBitmap", type: "uint256" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
     name: "withdraw",
     stateMutability: "nonpayable",
     inputs: [{ name: "recipient", type: "address" }],
@@ -186,6 +198,20 @@ export const artNamespaceProjectAbi = [
     stateMutability: "view",
     inputs: [],
     outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "ensSubnameMode",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint8" }],
+  },
+  {
+    type: "function",
+    name: "ensSubnameRoleBitmap",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
   },
   {
     type: "function",
@@ -265,6 +291,17 @@ export const artNamespaceProjectAbi = [
       { name: "ttl", type: "uint64", indexed: false },
       { name: "fuses", type: "uint32", indexed: false },
       { name: "expiry", type: "uint64", indexed: false },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "EnsV2SubnamesConfigured",
+    inputs: [
+      { name: "registry", type: "address", indexed: true },
+      { name: "resolver", type: "address", indexed: true },
+      { name: "expiry", type: "uint64", indexed: false },
+      { name: "roleBitmap", type: "uint256", indexed: false },
     ],
     anonymous: false,
   },

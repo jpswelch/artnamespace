@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Database, EyeOff, Loader2, Sparkles } from "lucide-react";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import { sepolia } from "wagmi/chains";
-import { isAddress, zeroAddress } from "viem";
+import { isAddress, zeroAddress, type Address } from "viem";
 import { namehash, normalize } from "viem/ens";
 import { RenderFrame } from "@/components/render-frame";
 import { RecordTable } from "@/components/record-table";
@@ -15,6 +15,12 @@ import { createAlgorithmBundle, samplePackage } from "@/lib/art/sample";
 import type { AlgorithmBundle, CollectionRecord, GeneratedOutput, ProvenanceManifest } from "@/lib/art/types";
 import { artNamespaceProjectAbi } from "@/lib/contracts/artnamespace";
 import { ENS_TEXT_KEYS, SEPOLIA_CHAIN_ID, getArtworkEns } from "@/lib/constants";
+import {
+  ENSV2_MAX_EXPIRY,
+  ENSV2_TOKEN_ROLE_BITMAP,
+  ensureEnsV2CollectionNamespace,
+  ensureEnsV2ProjectRegistrarRole,
+} from "@/lib/ens-v2";
 import { SEPOLIA_NAME_WRAPPER, ensureNameWrapperSubnameAuthority, isSepoliaNameWrapper } from "@/lib/ens-name-wrapper";
 import { getResolverForName, writeEnsTextRecords } from "@/lib/ens";
 import { truncateMiddle } from "@/lib/format";
@@ -176,7 +182,7 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
         setMintPriceWei(price);
         setProjectOwner(owner);
         setEnsSubnameRegistrar(registrar === zeroAddress ? undefined : registrar);
-        setEnsRegistrarInput(registrar === zeroAddress ? SEPOLIA_NAME_WRAPPER : registrar);
+        setEnsRegistrarInput(registrar === zeroAddress ? "" : registrar);
         setEnsResolverInput(collectionResolver || "");
       } catch {
         setStatus("Package contract was found, but it is not reachable on Sepolia yet");
@@ -197,23 +203,24 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
       return;
     }
 
-    const registrar = normalizeOptionalAddress(ensRegistrarInput) || SEPOLIA_NAME_WRAPPER;
-    if (!registrar) {
-      setEnsConfigError("Enter the collection subregistry or registrar address from ENS.");
-      return;
-    }
-
-    const resolver = normalizeOptionalAddress(ensResolverInput) || (await getResolverForName(publicClient, collectionENS).catch(() => null));
-    if (!resolver) {
-      setEnsConfigError("Enter an artwork resolver address, or configure a resolver on the collection ENS name first.");
-      return;
-    }
-
     setConfiguringEns(true);
     setEnsConfigError(null);
 
     try {
-      if (isSepoliaNameWrapper(registrar)) {
+      const manualRegistrar = normalizeOptionalAddress(ensRegistrarInput);
+      const manualResolver = normalizeOptionalAddress(ensResolverInput);
+      const parentNode = namehash(normalize(collectionENS));
+      let registrar: Address;
+      let resolver: Address;
+
+      if (manualRegistrar && isSepoliaNameWrapper(manualRegistrar)) {
+        const collectionResolver = manualResolver || (await getResolverForName(publicClient, collectionENS).catch(() => null));
+        if (!collectionResolver) {
+          throw new Error("Enter an artwork resolver address, or configure a resolver on the collection ENS name first.");
+        }
+
+        registrar = manualRegistrar;
+        resolver = collectionResolver;
         setStatus("Granting ArtNamespaceProject permission to create ENS token subnames");
         await ensureNameWrapperSubnameAuthority({
           publicClient,
@@ -223,21 +230,65 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
           resolver,
           operator: projectContract,
         });
-      }
 
-      setStatus("Configuring ENS token subname creation");
-      const parentNode = namehash(normalize(collectionENS));
-      const tx = await walletClient.writeContract({
-        account: address,
-        chain: sepolia,
-        address: projectContract,
-        abi: artNamespaceProjectAbi,
-        functionName: "configureEnsSubnames",
-        args: [registrar, parentNode, resolver, 0n, 0, 0n],
-      });
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: tx });
-      if (receipt.status !== "success") {
-        throw new Error("The ENS subname configuration transaction reverted.");
+        setStatus("Configuring ENS token subname creation");
+        const tx = await walletClient.writeContract({
+          account: address,
+          chain: sepolia,
+          address: projectContract,
+          abi: artNamespaceProjectAbi,
+          functionName: "configureEnsSubnames",
+          args: [registrar, parentNode, resolver, 0n, 0, 0n],
+        });
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: tx });
+        if (receipt.status !== "success") {
+          throw new Error("The ENS subname configuration transaction reverted.");
+        }
+      } else {
+        if (manualRegistrar) {
+          const collectionResolver = manualResolver || (await getResolverForName(publicClient, collectionENS).catch(() => null));
+          if (!collectionResolver) {
+            throw new Error("Enter an artwork resolver address, or configure a resolver on the collection ENS name first.");
+          }
+
+          registrar = manualRegistrar;
+          resolver = collectionResolver;
+        } else {
+          setStatus(`Preparing ENSv2 namespace for ${collectionENS}`);
+          const ensV2Setup = await ensureEnsV2CollectionNamespace({
+            publicClient,
+            walletClient,
+            account: address,
+            collectionEns: collectionENS,
+            resolver: manualResolver,
+            onStatus: setStatus,
+          });
+          registrar = ensV2Setup.collectionRegistry;
+          resolver = ensV2Setup.collectionResolver;
+        }
+
+        setStatus("Granting ArtNamespaceProject ENSv2 registrar permission");
+        await ensureEnsV2ProjectRegistrarRole({
+          publicClient,
+          walletClient,
+          account: address,
+          collectionRegistry: registrar,
+          projectContract,
+        });
+
+        setStatus("Configuring ENSv2 token subname creation");
+        const tx = await walletClient.writeContract({
+          account: address,
+          chain: sepolia,
+          address: projectContract,
+          abi: artNamespaceProjectAbi,
+          functionName: "configureEnsV2Subnames",
+          args: [registrar, resolver, ENSV2_MAX_EXPIRY, ENSV2_TOKEN_ROLE_BITMAP],
+        });
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: tx });
+        if (receipt.status !== "success") {
+          throw new Error("The ENSv2 subname configuration transaction reverted.");
+        }
       }
 
       setEnsSubnameRegistrar(registrar);
@@ -529,7 +580,7 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
             ) : null}
             {projectContract && ensSubnameRegistrar ? (
               <p className="mt-2 text-amber-800">
-                ENS token subname creation is configured. The collection ENS name must be wrapped and ArtNamespaceProject must be approved before minting.
+                ENS token subname creation is configured. ArtNamespaceProject must keep registrar permission on the collection registry before minting.
               </p>
             ) : null}
             {error ? <p className="mt-2 text-red-700">{error}</p> : null}
@@ -540,21 +591,21 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
               <h2 className="font-serif text-2xl">ENS subnames</h2>
               {isProjectOwner ? (
                 <div className="mt-4 space-y-3">
-                  <label className="block text-xs uppercase tracking-wide text-neutral-500">ENS registrar</label>
+                  <label className="block text-xs uppercase tracking-wide text-neutral-500">ENSv2 collection registry override</label>
                   <input
                     className="w-full border border-line p-2 font-mono text-xs"
                     onChange={(event) => {
                       setEnsRegistrarInput(event.target.value);
                       setEnsConfigError(null);
                     }}
-                    placeholder={`Defaults to ${SEPOLIA_NAME_WRAPPER}`}
+                    placeholder="Leave blank for automatic ENSv2 setup"
                     value={ensRegistrarInput}
                   />
                   {invalidEnsRegistrar ? (
-                    <p className="text-xs text-red-700">Enter a valid registrar address.</p>
+                    <p className="text-xs text-red-700">Enter a valid registry address.</p>
                   ) : (
                     <p className="text-xs leading-5 text-neutral-600">
-                      Uses the Sepolia Name Wrapper by default. ArtNamespace will wrap this collection name if needed, then grant ArtNamespaceProject permission to create 001, 002, and later token subnames.
+                      Leave blank to deploy/attach ENSv2 registries automatically. To use the old Name Wrapper path, explicitly enter {SEPOLIA_NAME_WRAPPER}.
                     </p>
                   )}
                   <label className="block text-xs uppercase tracking-wide text-neutral-500">Artwork resolver</label>

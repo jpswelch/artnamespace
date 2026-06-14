@@ -219,6 +219,71 @@ contract ArtNamespaceFactoryTest {
         assertEq(project.nextArtworkENS(), "003.curvefields.artist.eth", "next ens");
     }
 
+    function testCollectorMintRevertsWhenProjectLacksEnsV2RegistrarRole() public {
+        ArtNamespaceProject project = createDefaultProject();
+        MockEnsV2Registry registry = new MockEnsV2Registry();
+        CollectorCaller collector = new CollectorCaller();
+
+        project.configureEnsV2Subnames(address(registry), address(0x1234), 9999999999, 0);
+
+        try collector.mint(project, address(collector), "walrus://metadata", keccak256("ensv2-no-role")) {
+            revert("expected mint to fail without ensv2 registrar role");
+        } catch (bytes memory) {
+            assertTrue(true, "ensv2 registrar role required");
+        }
+
+        assertEq(project.nextTokenId(), 1, "mint reverted token sequence");
+        assertEq(project.balanceOf(address(collector)), 0, "collector has no token");
+        assertEq(registry.registered("001"), false, "subname was not registered");
+    }
+
+    function testCollectorMintsCreateSequentialEnsV2SubnamesWhenProjectHasRegistrarRole() public {
+        ArtNamespaceProject project = createDefaultProject();
+        MockEnsV2Registry registry = new MockEnsV2Registry();
+        CollectorCaller firstCollector = new CollectorCaller();
+        CollectorCaller secondCollector = new CollectorCaller();
+        address resolver = address(0x1234);
+        uint256 tokenRoleBitmap = 0x123;
+
+        registry.grantRootRoles(registry.ROLE_REGISTRAR(), address(project));
+        project.configureEnsV2Subnames(address(registry), resolver, 9999999999, tokenRoleBitmap);
+
+        uint256 firstTokenId = firstCollector.mint(
+            project,
+            address(firstCollector),
+            "walrus://metadata-one",
+            keccak256("ensv2-one")
+        );
+
+        assertEq(firstTokenId, 1, "first token id");
+        assertEq(uint256(project.ensSubnameMode()), 2, "ensv2 mode");
+        assertEq(project.ensParentNode(), bytes32(0), "ensv2 parent node");
+        assertEq(project.ensSubnameRoleBitmap(), tokenRoleBitmap, "token role bitmap");
+        assertEq(registry.lastCaller(), address(project), "project creates first subname");
+        assertEq(registry.lastLabel(), "001", "first label");
+        assertEq(registry.lastOwner(), address(firstCollector), "first subname owner");
+        assertEq(registry.lastRegistry(), address(0), "first token subregistry");
+        assertEq(registry.lastResolver(), resolver, "first resolver");
+        assertEq(registry.lastRoleBitmap(), tokenRoleBitmap, "first role bitmap");
+        assertEq(project.ownerOf(firstTokenId), address(firstCollector), "first token owner");
+        assertEq(project.tokenENS(firstTokenId), "001.curvefields.artist.eth", "first token ens");
+
+        uint256 secondTokenId = secondCollector.mint(
+            project,
+            address(secondCollector),
+            "walrus://metadata-two",
+            keccak256("ensv2-two")
+        );
+
+        assertEq(secondTokenId, 2, "second token id");
+        assertEq(registry.lastCaller(), address(project), "project creates second subname");
+        assertEq(registry.lastLabel(), "002", "second label");
+        assertEq(registry.lastOwner(), address(secondCollector), "second subname owner");
+        assertEq(project.ownerOf(secondTokenId), address(secondCollector), "second token owner");
+        assertEq(project.tokenENS(secondTokenId), "002.curvefields.artist.eth", "second token ens");
+        assertEq(project.nextArtworkENS(), "003.curvefields.artist.eth", "next ens");
+    }
+
     function testNonOwnerCannotConfigureEnsSubnames() public {
         ArtNamespaceProject project = createDefaultProject();
         ProjectCaller caller = new ProjectCaller();
@@ -227,6 +292,17 @@ contract ArtNamespaceFactoryTest {
             revert("expected non-owner configure to fail");
         } catch (bytes memory) {
             assertTrue(true, "non-owner rejected");
+        }
+    }
+
+    function testNonOwnerCannotConfigureEnsV2Subnames() public {
+        ArtNamespaceProject project = createDefaultProject();
+        ProjectCaller caller = new ProjectCaller();
+
+        try caller.configureEnsV2Subnames(project, address(0x1234), address(0x5678)) {
+            revert("expected non-owner ensv2 configure to fail");
+        } catch (bytes memory) {
+            assertTrue(true, "non-owner ensv2 rejected");
         }
     }
 
@@ -263,6 +339,10 @@ contract ArtNamespaceFactoryTest {
 
     function assertEq(string memory actual, string memory expected, string memory message) internal pure {
         if (keccak256(bytes(actual)) != keccak256(bytes(expected))) revert(message);
+    }
+
+    function assertEq(bool actual, bool expected, string memory message) internal pure {
+        if (actual != expected) revert(message);
     }
 
     function assertTrue(bool value, string memory message) internal pure {
@@ -370,6 +450,64 @@ contract MockNameWrapperRegistrar {
     }
 }
 
+contract MockEnsV2Registry {
+    error MissingRegistrarRole(address caller);
+
+    uint256 public constant ROLE_REGISTRAR = 1 << 0;
+
+    string public lastLabel;
+    address public lastOwner;
+    address public lastRegistry;
+    address public lastResolver;
+    uint256 public lastRoleBitmap;
+    uint64 public lastExpiry;
+    address public lastCaller;
+
+    mapping(address => bool) public canRegister;
+    mapping(bytes32 => address) public ownerForLabel;
+
+    function grantRootRoles(uint256 roleBitmap, address account) external {
+        if (roleBitmap & ROLE_REGISTRAR != 0) {
+            canRegister[account] = true;
+        }
+    }
+
+    function hasRoles(uint256, uint256 roleBitmap, address account) external view returns (bool) {
+        if (roleBitmap & ROLE_REGISTRAR != 0) {
+            return canRegister[account];
+        }
+
+        return true;
+    }
+
+    function registered(string calldata label) external view returns (bool) {
+        return ownerForLabel[keccak256(bytes(label))] != address(0);
+    }
+
+    function register(
+        string calldata label,
+        address owner,
+        address registry,
+        address resolver,
+        uint256 roleBitmap,
+        uint64 expiry
+    ) external returns (uint256) {
+        if (!canRegister[msg.sender]) revert MissingRegistrarRole(msg.sender);
+
+        bytes32 labelHash = keccak256(bytes(label));
+        ownerForLabel[labelHash] = owner;
+        lastLabel = label;
+        lastOwner = owner;
+        lastRegistry = registry;
+        lastResolver = resolver;
+        lastRoleBitmap = roleBitmap;
+        lastExpiry = expiry;
+        lastCaller = msg.sender;
+
+        return uint256(labelHash);
+    }
+}
+
 contract ProjectCaller {
     function configureEnsSubnames(
         ArtNamespaceProject project,
@@ -378,5 +516,13 @@ contract ProjectCaller {
         address resolver
     ) external {
         project.configureEnsSubnames(registrar, parentNode, resolver, 0, 0, 0);
+    }
+
+    function configureEnsV2Subnames(
+        ArtNamespaceProject project,
+        address registry,
+        address resolver
+    ) external {
+        project.configureEnsV2Subnames(registry, resolver, 9999999999, 0);
     }
 }

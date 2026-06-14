@@ -13,6 +13,17 @@ interface IEnsSubnameRegistrar {
     ) external returns (bytes32);
 }
 
+interface IEnsV2Registry {
+    function register(
+        string calldata label,
+        address owner,
+        address registry,
+        address resolver,
+        uint256 roleBitmap,
+        uint64 expiry
+    ) external returns (uint256);
+}
+
 contract ArtNamespaceProject {
     error AlreadyMinted(bytes32 uniquenessHash);
     error EnsSubnameCreationFailed(address registrar, string label, bytes reason);
@@ -43,6 +54,8 @@ contract ArtNamespaceProject {
     uint64 public ensSubnameTtl;
     uint32 public ensSubnameFuses;
     uint64 public ensSubnameExpiry;
+    uint8 public ensSubnameMode;
+    uint256 public ensSubnameRoleBitmap;
     bool private _minting;
 
     mapping(uint256 => address) public ownerOf;
@@ -68,6 +81,7 @@ contract ArtNamespaceProject {
         uint32 fuses,
         uint64 expiry
     );
+    event EnsV2SubnamesConfigured(address indexed registry, address indexed resolver, uint64 expiry, uint256 roleBitmap);
     event ArtworkSubnameCreated(uint256 indexed tokenId, string label, string artworkENS, address indexed owner);
     event ArtworkMinted(
         uint256 indexed tokenId,
@@ -88,6 +102,10 @@ contract ArtNamespaceProject {
         _;
         _minting = false;
     }
+
+    uint8 private constant ENS_MODE_DISABLED = 0;
+    uint8 private constant ENS_MODE_NAME_WRAPPER = 1;
+    uint8 private constant ENS_MODE_ENSV2_REGISTRY = 2;
 
     constructor(
         string memory name_,
@@ -147,8 +165,33 @@ contract ArtNamespaceProject {
         ensSubnameTtl = ttl;
         ensSubnameFuses = fuses;
         ensSubnameExpiry = expiry;
+        ensSubnameMode = registrar == address(0) ? ENS_MODE_DISABLED : ENS_MODE_NAME_WRAPPER;
+        ensSubnameRoleBitmap = 0;
 
         emit EnsSubnamesConfigured(registrar, parentNode, resolver, ttl, fuses, expiry);
+    }
+
+    function configureEnsV2Subnames(
+        address registry,
+        address resolver,
+        uint64 expiry,
+        uint256 roleBitmap
+    ) external onlyOwner {
+        if (registry == address(0) || resolver == address(0) || expiry == 0) {
+            revert InvalidEnsSubnameConfig();
+        }
+
+        ensSubnameRegistrar = registry;
+        ensParentNode = bytes32(0);
+        ensResolver = resolver;
+        ensSubnameTtl = 0;
+        ensSubnameFuses = 0;
+        ensSubnameExpiry = expiry;
+        ensSubnameMode = ENS_MODE_ENSV2_REGISTRY;
+        ensSubnameRoleBitmap = roleBitmap;
+
+        emit EnsV2SubnamesConfigured(registry, resolver, expiry, roleBitmap);
+        emit EnsSubnamesConfigured(registry, bytes32(0), resolver, 0, 0, expiry);
     }
 
     function mintArtwork(
@@ -171,7 +214,7 @@ contract ArtNamespaceProject {
         tokenUniquenessHash[tokenId] = uniquenessHash;
         _tokenURIs[tokenId] = metadataURI;
 
-        if (ensSubnameRegistrar != address(0)) {
+        if (ensSubnameMode != ENS_MODE_DISABLED) {
             _createEnsSubname(tokenId, label, artworkENS, to);
         }
 
@@ -243,18 +286,33 @@ contract ArtNamespaceProject {
         string memory artworkENS,
         address to
     ) private {
-        try IEnsSubnameRegistrar(ensSubnameRegistrar).setSubnodeRecord(
-            ensParentNode,
-            label,
-            to,
-            ensResolver,
-            ensSubnameTtl,
-            ensSubnameFuses,
-            ensSubnameExpiry
-        ) returns (bytes32) {
-            emit ArtworkSubnameCreated(tokenId, label, artworkENS, to);
-        } catch (bytes memory reason) {
-            revert EnsSubnameCreationFailed(ensSubnameRegistrar, label, reason);
+        if (ensSubnameMode == ENS_MODE_NAME_WRAPPER) {
+            try IEnsSubnameRegistrar(ensSubnameRegistrar).setSubnodeRecord(
+                ensParentNode,
+                label,
+                to,
+                ensResolver,
+                ensSubnameTtl,
+                ensSubnameFuses,
+                ensSubnameExpiry
+            ) returns (bytes32) {
+                emit ArtworkSubnameCreated(tokenId, label, artworkENS, to);
+            } catch (bytes memory reason) {
+                revert EnsSubnameCreationFailed(ensSubnameRegistrar, label, reason);
+            }
+        } else if (ensSubnameMode == ENS_MODE_ENSV2_REGISTRY) {
+            try IEnsV2Registry(ensSubnameRegistrar).register(
+                label,
+                to,
+                address(0),
+                ensResolver,
+                ensSubnameRoleBitmap,
+                ensSubnameExpiry
+            ) returns (uint256) {
+                emit ArtworkSubnameCreated(tokenId, label, artworkENS, to);
+            } catch (bytes memory reason) {
+                revert EnsSubnameCreationFailed(ensSubnameRegistrar, label, reason);
+            }
         }
     }
 
