@@ -122,6 +122,7 @@ export function createAlgorithmBundle(pkg: ArtPackage): AlgorithmBundle {
     manifest: pkg.manifest,
     paramsSchema: pkg.paramsSchema,
     sketch: pkg.sketch,
+    previewDataUrl: pkg.previewDataUrl,
     readme: pkg.readme,
     packageHash: hashBytes(pkg.bundleBytes),
     createdAt: new Date().toISOString(),

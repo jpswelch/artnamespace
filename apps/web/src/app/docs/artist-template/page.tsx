@@ -7,7 +7,7 @@ export default function ArtistTemplatePage() {
         <p className="font-mono text-xs uppercase tracking-[0.22em] text-neutral-600">Artist Template</p>
         <h1 className="mt-4 font-serif text-5xl">p5.js Package Format</h1>
         <p className="mt-3 leading-7 text-neutral-700">
-          The MVP accepts ZIP packages containing a manifest, parameter schema, sketch, and optional preview/readme files.
+          The MVP accepts ZIP packages containing a manifest, parameter schema, sketch, deterministic preview image, and optional readme.
         </p>
       </div>
 
@@ -22,6 +22,10 @@ export default function ArtistTemplatePage() {
 ├── preview.png
 └── README.md`}
           </pre>
+          <p className="mt-3 leading-7 text-neutral-700">
+            `preview.png` should be an actual example render from the package algorithm using deterministic seed and params. It is stored with
+            the package bundle so collectors can see a representative output before minting.
+          </p>
         </div>
 
         <div>

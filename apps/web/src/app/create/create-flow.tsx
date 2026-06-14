@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { Check, FileUp, Loader2, Wand2 } from "lucide-react";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
@@ -9,7 +10,7 @@ import { formatEther, isAddress, zeroAddress } from "viem";
 import { namehash, normalize } from "viem/ens";
 import { RecordTable } from "@/components/record-table";
 import { StatusPill } from "@/components/status-pill";
-import { createAlgorithmBundle, samplePackage } from "@/lib/art/sample";
+import { createAlgorithmBundle } from "@/lib/art/sample";
 import { packageHash, parseArtPackage } from "@/lib/art/package";
 import type { ArtPackage, CollectionRecord } from "@/lib/art/types";
 import { artNamespaceFactoryAbi, artNamespaceProjectAbi } from "@/lib/contracts/artnamespace";
@@ -211,6 +212,25 @@ export function CreateFlow() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setStatus("Package could not be loaded");
+    }
+  }
+
+  async function loadExamplePackage() {
+    setError(null);
+    setPublished(null);
+    setStatus("Loading example package");
+
+    try {
+      const response = await fetch("/packages/curvefields.zip?v=b88dd0c9");
+      if (!response.ok) {
+        throw new Error("Example package could not be loaded.");
+      }
+
+      const blob = await response.blob();
+      await onUpload(new File([blob], "curvefields.zip", { type: "application/zip" }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setStatus("Example package could not be loaded");
     }
   }
 
@@ -472,21 +492,25 @@ export function CreateFlow() {
             />
             <button
               className="mt-3 inline-flex items-center gap-2 border border-line px-3 py-2 text-sm hover:border-ink"
-              onClick={() => {
-                setError(null);
-                setPkg(samplePackage(creatorEns || ""));
-                setMintPriceInputEth("0");
-                setPublished(null);
-                setStatus("Demo package loaded");
-              }}
+              onClick={() => void loadExamplePackage()}
             >
-              <Wand2 size={16} /> Load Demo Package
+              <Wand2 size={16} /> Load Example Package
             </button>
           </div>
 
           <div className="border border-line p-4">
             {pkg ? (
               <>
+                {pkg.previewDataUrl ? (
+                  <Image
+                    alt={`${pkg.manifest.name} package preview`}
+                    className="mb-4 aspect-square w-full border border-line object-cover"
+                    height={720}
+                    src={pkg.previewDataUrl}
+                    unoptimized
+                    width={720}
+                  />
+                ) : null}
                 <h2 className="font-serif text-2xl">{pkg.manifest.name}</h2>
                 <p className="mt-2 text-sm leading-6 text-neutral-700">{pkg.manifest.description}</p>
               </>

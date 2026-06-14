@@ -56,6 +56,7 @@ export type AlgorithmBundle = {
   manifest: ArtManifest;
   paramsSchema: ParamSchema;
   sketch: string;
+  previewDataUrl?: string;
   readme?: string;
   packageHash: `0x${string}`;
   createdAt: string;
