@@ -1,0 +1,47 @@
+{
+  "background": {
+    "type": "color",
+    "mode": "palette",
+    "values": ["#07111F", "#F8F5ED", "#111827", "#F0FDF4"]
+  },
+  "stemColor": {
+    "type": "color",
+    "mode": "palette",
+    "values": ["#14B8A6", "#22C55E", "#38BDF8", "#64748B"]
+  },
+  "bloomColor": {
+    "type": "color",
+    "mode": "palette",
+    "values": ["#F97316", "#E879F9", "#FACC15", "#FB7185"]
+  },
+  "signalColor": {
+    "type": "color",
+    "mode": "palette",
+    "values": ["#A7F3D0", "#BAE6FD", "#FDE68A", "#FBCFE8"]
+  },
+  "gardenSize": {
+    "type": "integer",
+    "min": 5,
+    "max": 11
+  },
+  "waveCount": {
+    "type": "integer",
+    "min": 3,
+    "max": 9
+  },
+  "jitter": {
+    "type": "number",
+    "min": 0.08,
+    "max": 0.65,
+    "step": 0.01
+  },
+  "petalScale": {
+    "type": "number",
+    "min": 0.7,
+    "max": 1.8,
+    "step": 0.05
+  },
+  "nightMode": {
+    "type": "boolean"
+  }
+}

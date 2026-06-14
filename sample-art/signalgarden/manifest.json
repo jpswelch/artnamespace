@@ -1,0 +1,11 @@
+{
+  "name": "Signal Garden",
+  "slug": "signalgarden",
+  "artistENS": "artnamespace-demo.eth",
+  "description": "A deterministic garden of signal stems, radial blooms, and quiet broadcast waves.",
+  "renderer": "p5js",
+  "rendererVersion": "1.9.0",
+  "aspectRatio": "1:1",
+  "license": "CC BY-NC 4.0",
+  "maxSupply": 144
+}
