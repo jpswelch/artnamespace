@@ -9,7 +9,7 @@ coverage
 .env.*.local
 cache
 broadcast
-lib
+/lib
 .vercel
 apps/web/public/vendor/p5.min.js
 *.log

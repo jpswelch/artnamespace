@@ -1,0 +1,55 @@
+export const SEPOLIA_CHAIN_ID = 11155111;
+
+export const ENS_TEXT_KEYS = {
+  creator: "artnamespace.creator",
+  collection: "artnamespace.collection",
+  algorithmHash: "artnamespace.algorithmHash",
+  codeURI: "artnamespace.codeURI",
+  tokenId: "artnamespace.tokenId",
+  seed: "artnamespace.seed",
+  paramsHash: "artnamespace.paramsHash",
+  metadataURI: "artnamespace.metadataURI",
+  renderURI: "artnamespace.renderURI",
+  contract: "artnamespace.contract",
+  factory: "artnamespace.factory",
+  projectContract: "artnamespace.projectContract",
+  mintPriceWei: "artnamespace.mintPriceWei",
+  maxSupply: "artnamespace.maxSupply",
+  manifestURI: "artnamespace.manifestURI",
+  chain: "artnamespace.chain",
+} as const;
+
+export const DEFAULT_COLLECTION_SLUG = "curvefields";
+export const DEFAULT_COLLECTION_NAME = "Curvefields";
+
+export function getArtistEnsRoot() {
+  return process.env.NEXT_PUBLIC_ARTIST_ENS_ROOT || "artnamespace-demo.eth";
+}
+
+export function getCollectionEns(artistRoot = getArtistEnsRoot()) {
+  return `${DEFAULT_COLLECTION_SLUG}.${artistRoot}`;
+}
+
+export function getArtworkEns(tokenId: number, collectionEns = getCollectionEns()) {
+  return `${tokenId.toString().padStart(3, "0")}.${collectionEns}`;
+}
+
+export function getDropContractAddress() {
+  return process.env.NEXT_PUBLIC_DROP_CONTRACT as `0x${string}` | undefined;
+}
+
+export function getFactoryAddress() {
+  return process.env.NEXT_PUBLIC_ARTNAMESPACE_FACTORY as `0x${string}` | undefined;
+}
+
+export function getSepoliaRpcUrl() {
+  return (
+    process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL ||
+    process.env.SEPOLIA_RPC_URL ||
+    "https://ethereum-sepolia-rpc.publicnode.com"
+  );
+}
+
+export function getMainnetRpcUrl() {
+  return process.env.NEXT_PUBLIC_MAINNET_RPC_URL || "https://ethereum-rpc.publicnode.com";
+}

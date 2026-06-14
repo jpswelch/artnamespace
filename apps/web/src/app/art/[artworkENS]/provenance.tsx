@@ -30,6 +30,7 @@ export function ArtworkProvenance({ artworkENS }: { artworkENS: string }) {
             ENS_TEXT_KEYS.metadataURI,
             ENS_TEXT_KEYS.renderURI,
             ENS_TEXT_KEYS.algorithmHash,
+            ENS_TEXT_KEYS.projectContract,
             ENS_TEXT_KEYS.contract,
             ENS_TEXT_KEYS.manifestURI,
           ],

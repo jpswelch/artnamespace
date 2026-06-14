@@ -19,8 +19,8 @@ Open `http://localhost:3000`.
 1. Register a new Sepolia ENS name for the artist demo, such as `artnamespace-demo.eth`.
 2. Pre-create `curvefields.<artistRoot>` and at least one artwork subname such as `001.curvefields.<artistRoot>`.
 3. Configure the resolver so the connected wallet can set text records.
-4. Deploy `contracts/src/ArtNamespaceDrop.sol` to Sepolia.
-5. Set `NEXT_PUBLIC_ARTIST_ENS_ROOT`, `NEXT_PUBLIC_DROP_CONTRACT`, `NEXT_PUBLIC_SEPOLIA_RPC_URL`, `WALRUS_PUBLISHER_URL`, and `WALRUS_AGGREGATOR_URL`.
+4. Deploy `contracts/src/ArtNamespaceFactory.sol` to Sepolia with `make deploy-factory`.
+5. Set `NEXT_PUBLIC_ARTIST_ENS_ROOT`, `NEXT_PUBLIC_ARTNAMESPACE_FACTORY`, `NEXT_PUBLIC_SEPOLIA_RPC_URL`, `WALRUS_PUBLISHER_URL`, and `WALRUS_AGGREGATOR_URL`.
 
 ## Vercel Deployment
 
@@ -31,6 +31,7 @@ Set the same environment variables from `.env.example` in Vercel. Do not set `WA
 ## ENS Integration
 
 - Resolves artist and collection names.
+- Deploys one ERC-721 package contract per artist project through the factory.
 - Writes prefixed provenance text records to pre-created collection and artwork ENS names.
 - Reads records back into collection and provenance pages.
 - Uses ENS as the canonical artist -> collection -> artwork namespace.
@@ -48,5 +49,16 @@ pnpm build
 pnpm test:run
 pnpm contracts:test
 ```
+
+## Contract Deployment Helpers
+
+```bash
+make contracts-build
+make contracts-test
+make deploy-factory
+make deploy-factory-verify
+```
+
+`make deploy-factory` expects `SEPOLIA_RPC_URL` or `NEXT_PUBLIC_SEPOLIA_RPC_URL` and uses the Foundry account `testkey` by default. Override it with `DEPLOYER_ACCOUNT=<account-name>` when needed. After deployment, copy the deployed address into `NEXT_PUBLIC_ARTNAMESPACE_FACTORY`.
 
 See `docs/DEMO_SCRIPT.md` for the four-minute judge demo.

@@ -3,7 +3,7 @@
 ArtNamespace is built as a controlled live hackathon demo:
 
 - Next.js App Router frontend and API routes in `apps/web`
-- Foundry ERC-721 contract in `contracts`
+- Foundry factory and per-package ERC-721 contracts in `contracts`
 - Curvefields sample package in `sample-art/curvefields`
 - Walrus Testnet storage through HTTP publisher/aggregator routes
 - ENS text-record reads/writes on a new Sepolia artist namespace
@@ -15,7 +15,7 @@ The MVP path is artist upload/publish -> collector mint -> artwork provenance pa
 - Sepolia wallet with test ETH
 - New Sepolia ENS artist name, not `blkcipher.eth`
 - Pre-created `curvefields.<artistRoot>` and first artwork subnames
-- Deployed `ArtNamespaceDrop` contract
+- Deployed `ArtNamespaceFactory` contract
 - Walrus Testnet publisher and aggregator URLs
 
 ## Scope Boundaries

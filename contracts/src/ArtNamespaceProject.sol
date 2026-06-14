@@ -1,15 +1,26 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-contract ArtNamespaceDrop {
+contract ArtNamespaceProject {
     error AlreadyMinted(bytes32 uniquenessHash);
-    error NotTokenOwner();
-    error NonexistentToken(uint256 tokenId);
     error InvalidRecipient();
+    error MaxSupplyReached();
+    error MintPriceNotMet(uint256 required, uint256 received);
+    error NonexistentToken(uint256 tokenId);
     error NotApproved();
+    error NotOwner();
+    error NotTokenOwner();
+    error WithdrawFailed();
 
     string public name;
     string public symbol;
+    address public owner;
+    string public artistENS;
+    string public collectionENS;
+    string public algorithmURI;
+    bytes32 public algorithmHash;
+    uint256 public maxSupply;
+    uint256 public mintPriceWei;
     uint256 public nextTokenId = 1;
 
     mapping(uint256 => address) public ownerOf;
@@ -25,6 +36,9 @@ contract ArtNamespaceDrop {
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
     event Approval(address indexed owner, address indexed spender, uint256 indexed tokenId);
     event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
+    event MintPriceUpdated(uint256 mintPriceWei);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event Withdrawal(address indexed recipient, uint256 amount);
     event ArtworkMinted(
         uint256 indexed tokenId,
         address indexed owner,
@@ -33,9 +47,53 @@ contract ArtNamespaceDrop {
         bytes32 uniquenessHash
     );
 
-    constructor() {
-        name = "ArtNamespace Drop";
-        symbol = "ARTNS";
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert NotOwner();
+        _;
+    }
+
+    constructor(
+        string memory name_,
+        string memory symbol_,
+        address owner_,
+        string memory artistENS_,
+        string memory collectionENS_,
+        string memory algorithmURI_,
+        bytes32 algorithmHash_,
+        uint256 maxSupply_
+    ) {
+        if (owner_ == address(0)) revert InvalidRecipient();
+        if (maxSupply_ == 0) revert MaxSupplyReached();
+
+        name = name_;
+        symbol = symbol_;
+        owner = owner_;
+        artistENS = artistENS_;
+        collectionENS = collectionENS_;
+        algorithmURI = algorithmURI_;
+        algorithmHash = algorithmHash_;
+        maxSupply = maxSupply_;
+        mintPriceWei = 0;
+    }
+
+    function setMintPrice(uint256 mintPriceWei_) external onlyOwner {
+        mintPriceWei = mintPriceWei_;
+        emit MintPriceUpdated(mintPriceWei_);
+    }
+
+    function transferOwnership(address newOwner) external onlyOwner {
+        if (newOwner == address(0)) revert InvalidRecipient();
+        address previousOwner = owner;
+        owner = newOwner;
+        emit OwnershipTransferred(previousOwner, newOwner);
+    }
+
+    function withdraw(address payable recipient) external onlyOwner {
+        if (recipient == address(0)) revert InvalidRecipient();
+        uint256 amount = address(this).balance;
+        (bool ok,) = recipient.call{value: amount}("");
+        if (!ok) revert WithdrawFailed();
+        emit Withdrawal(recipient, amount);
     }
 
     function mintArtwork(
@@ -45,6 +103,8 @@ contract ArtNamespaceDrop {
         bytes32 uniquenessHash
     ) external payable returns (uint256 tokenId) {
         if (to == address(0)) revert InvalidRecipient();
+        if (msg.value < mintPriceWei) revert MintPriceNotMet(mintPriceWei, msg.value);
+        if (nextTokenId > maxSupply) revert MaxSupplyReached();
         if (usedUniquenessHashes[uniquenessHash]) revert AlreadyMinted(uniquenessHash);
 
         tokenId = nextTokenId++;
@@ -65,12 +125,12 @@ contract ArtNamespaceDrop {
     }
 
     function approve(address spender, uint256 tokenId) external {
-        address owner = ownerOf[tokenId];
-        if (owner == address(0)) revert NonexistentToken(tokenId);
-        if (msg.sender != owner && !isApprovedForAll[owner][msg.sender]) revert NotTokenOwner();
+        address tokenOwner = ownerOf[tokenId];
+        if (tokenOwner == address(0)) revert NonexistentToken(tokenId);
+        if (msg.sender != tokenOwner && !isApprovedForAll[tokenOwner][msg.sender]) revert NotTokenOwner();
 
         getApproved[tokenId] = spender;
-        emit Approval(owner, spender, tokenId);
+        emit Approval(tokenOwner, spender, tokenId);
     }
 
     function setApprovalForAll(address operator, bool approved) external {
@@ -80,10 +140,10 @@ contract ArtNamespaceDrop {
 
     function transferFrom(address from, address to, uint256 tokenId) public {
         if (to == address(0)) revert InvalidRecipient();
-        address owner = ownerOf[tokenId];
-        if (owner == address(0)) revert NonexistentToken(tokenId);
-        if (owner != from) revert NotTokenOwner();
-        if (msg.sender != owner && getApproved[tokenId] != msg.sender && !isApprovedForAll[owner][msg.sender]) {
+        address tokenOwner = ownerOf[tokenId];
+        if (tokenOwner == address(0)) revert NonexistentToken(tokenId);
+        if (tokenOwner != from) revert NotTokenOwner();
+        if (msg.sender != tokenOwner && getApproved[tokenId] != msg.sender && !isApprovedForAll[tokenOwner][msg.sender]) {
             revert NotApproved();
         }
 

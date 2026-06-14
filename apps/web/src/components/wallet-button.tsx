@@ -1,16 +1,17 @@
 "use client";
 
-import { Wallet, Unplug } from "lucide-react";
-import { useAccount, useConnect, useDisconnect, useEnsName, useSwitchChain } from "wagmi";
+import Link from "next/link";
+import { UserCircle, Wallet, Unplug } from "lucide-react";
+import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { sepolia } from "wagmi/chains";
-import { shortAddress } from "@/lib/format";
+import { useAccountDisplay } from "@/lib/use-account-display";
 
 export function WalletButton() {
   const { address, chainId, isConnected } = useAccount();
   const { connect, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
   const { switchChain, isPending: switching } = useSwitchChain();
-  const { data: ensName } = useEnsName({ address, chainId: sepolia.id });
+  const { displayName } = useAccountDisplay(address);
 
   if (isConnected && chainId !== sepolia.id) {
     return (
@@ -23,10 +24,15 @@ export function WalletButton() {
 
   if (isConnected && address) {
     return (
-      <button className="inline-flex items-center gap-2 border border-line px-3 py-2 text-sm hover:border-ink" onClick={() => disconnect()}>
-        <Unplug size={16} />
-        {ensName || shortAddress(address)}
-      </button>
+      <div className="flex items-center gap-2">
+        <Link className="inline-flex items-center gap-2 border border-line px-3 py-2 text-sm hover:border-ink" href="/profile">
+          <UserCircle size={16} />
+          {displayName}
+        </Link>
+        <button aria-label="Disconnect wallet" className="inline-flex size-9 items-center justify-center border border-line hover:border-ink" onClick={() => disconnect()}>
+          <Unplug size={16} />
+        </button>
+      </div>
     );
   }
 

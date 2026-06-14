@@ -9,7 +9,9 @@ flowchart LR
   Create --> ENS[Sepolia ENS Resolver]
   Collector[Collector Wallet] --> Mint[Collection Mint Page]
   Mint --> Renderer
-  Mint --> Contract[ArtNamespaceDrop ERC-721]
+  Create --> Factory[ArtNamespaceFactory]
+  Factory --> Project[Per-package ERC-721]
+  Mint --> Project
   Mint --> WalrusAPI
   Mint --> ENS
   ENS --> Provenance[Artwork Provenance Page]
@@ -25,7 +27,7 @@ flowchart LR
 4. Collection text records are written to the pre-created ENS collection name.
 5. Collector renders the next deterministic output.
 6. Params, render, NFT metadata, and provenance manifest are uploaded to Walrus.
-7. The ERC-721 is minted with the metadata URI and uniqueness hash.
+7. The package ERC-721 is minted with the metadata URI, uniqueness hash, and current fixed mint price.
 8. Artwork text records are written to the pre-created ENS artwork name.
 9. The provenance page reads ENS and Walrus records back live.
 
