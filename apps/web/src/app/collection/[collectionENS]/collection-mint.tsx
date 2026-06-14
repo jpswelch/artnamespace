@@ -15,6 +15,7 @@ import { createAlgorithmBundle, samplePackage } from "@/lib/art/sample";
 import type { AlgorithmBundle, CollectionRecord, GeneratedOutput, ProvenanceManifest } from "@/lib/art/types";
 import { artNamespaceProjectAbi } from "@/lib/contracts/artnamespace";
 import { ENS_TEXT_KEYS, SEPOLIA_CHAIN_ID, getArtworkEns } from "@/lib/constants";
+import { SEPOLIA_NAME_WRAPPER, ensureNameWrapperApproval, isSepoliaNameWrapper } from "@/lib/ens-name-wrapper";
 import { getResolverForName, writeEnsTextRecords } from "@/lib/ens";
 import { truncateMiddle } from "@/lib/format";
 import { loadCollection, saveArtwork } from "@/lib/local-cache";
@@ -174,7 +175,7 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
         setMintPriceWei(price);
         setProjectOwner(owner);
         setEnsSubnameRegistrar(registrar === zeroAddress ? undefined : registrar);
-        setEnsRegistrarInput(registrar === zeroAddress ? "" : registrar);
+        setEnsRegistrarInput(registrar === zeroAddress ? SEPOLIA_NAME_WRAPPER : registrar);
         setEnsResolverInput(collectionResolver || "");
       } catch {
         setStatus("Package contract was found, but it is not reachable on Sepolia yet");
@@ -195,7 +196,7 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
       return;
     }
 
-    const registrar = normalizeOptionalAddress(ensRegistrarInput);
+    const registrar = normalizeOptionalAddress(ensRegistrarInput) || SEPOLIA_NAME_WRAPPER;
     if (!registrar) {
       setEnsConfigError("Enter the collection subregistry or registrar address from ENS.");
       return;
@@ -211,6 +212,16 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
     setEnsConfigError(null);
 
     try {
+      if (isSepoliaNameWrapper(registrar)) {
+        setStatus("Approving package contract to create ENS artwork subnames");
+        await ensureNameWrapperApproval({
+          publicClient,
+          walletClient,
+          account: address,
+          operator: projectContract,
+        });
+      }
+
       setStatus("Configuring ENS artwork subname creation");
       const parentNode = namehash(normalize(collectionENS));
       const tx = await walletClient.writeContract({
@@ -510,8 +521,7 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
             {!projectContract ? <p className="mt-2 text-amber-800">Publish this package contract before live minting.</p> : null}
             {projectContract && !ensSubnameRegistrar ? (
               <p className="mt-2 text-amber-800">
-                ENS artwork subname creation is not configured yet. The contract can derive the name, but it needs the collection subregistry
-                or registrar address to create it during mint.
+                ENS artwork subname creation is not configured yet. The package owner can configure the Sepolia ENS Name Wrapper below.
               </p>
             ) : null}
             {error ? <p className="mt-2 text-red-700">{error}</p> : null}
@@ -522,17 +532,23 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
               <h2 className="font-serif text-2xl">ENS subnames</h2>
               {isProjectOwner ? (
                 <div className="mt-4 space-y-3">
-                  <label className="block text-xs uppercase tracking-wide text-neutral-500">Collection subregistry or registrar</label>
+                  <label className="block text-xs uppercase tracking-wide text-neutral-500">ENS registrar</label>
                   <input
                     className="w-full border border-line p-2 font-mono text-xs"
                     onChange={(event) => {
                       setEnsRegistrarInput(event.target.value);
                       setEnsConfigError(null);
                     }}
-                    placeholder="0x..."
+                    placeholder={`Defaults to ${SEPOLIA_NAME_WRAPPER}`}
                     value={ensRegistrarInput}
                   />
-                  {invalidEnsRegistrar ? <p className="text-xs text-red-700">Enter a valid registrar address.</p> : null}
+                  {invalidEnsRegistrar ? (
+                    <p className="text-xs text-red-700">Enter a valid registrar address.</p>
+                  ) : (
+                    <p className="text-xs leading-5 text-neutral-600">
+                      Uses the Sepolia ENS Name Wrapper by default so minted works can become 001.collection.artist.eth.
+                    </p>
+                  )}
                   <label className="block text-xs uppercase tracking-wide text-neutral-500">Artwork resolver</label>
                   <input
                     className="w-full border border-line p-2 font-mono text-xs"
@@ -546,7 +562,7 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
                   {invalidEnsResolver ? <p className="text-xs text-red-700">Enter a valid resolver address.</p> : null}
                   <button
                     className="inline-flex w-full items-center justify-center gap-2 border border-ink px-4 py-2 text-sm hover:bg-paper disabled:cursor-not-allowed disabled:border-neutral-300 disabled:text-neutral-400"
-                    disabled={configuringEns || !ensRegistrarAddress || invalidEnsResolver}
+                    disabled={configuringEns || invalidEnsRegistrar || invalidEnsResolver}
                     onClick={() => void configureEnsSubnames()}
                   >
                     {configuringEns ? <Loader2 className="animate-spin" size={16} /> : null}

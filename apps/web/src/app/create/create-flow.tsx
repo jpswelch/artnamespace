@@ -16,6 +16,7 @@ import type { ArtPackage, CollectionRecord } from "@/lib/art/types";
 import { artNamespaceFactoryAbi, artNamespaceProjectAbi } from "@/lib/contracts/artnamespace";
 import { ENS_TEXT_KEYS, getCollectionEns, getFactoryAddress } from "@/lib/constants";
 import { getResolverForName, publicResolverAbi, readEnsTextRecords, writeEnsTextRecords } from "@/lib/ens";
+import { SEPOLIA_NAME_WRAPPER, ensureNameWrapperApproval, isSepoliaNameWrapper } from "@/lib/ens-name-wrapper";
 import { loadCollection, saveCollection } from "@/lib/local-cache";
 import { truncateMiddle } from "@/lib/format";
 import { parseMintPriceEth } from "@/lib/price";
@@ -337,7 +338,7 @@ export function CreateFlow() {
         );
       }
       const collectionNode = namehash(normalize(targetCollectionEns));
-      const targetSubnameRegistrar = normalizeOptionalAddress(subnameRegistrarInput);
+      const targetSubnameRegistrar = normalizeOptionalAddress(subnameRegistrarInput) || SEPOLIA_NAME_WRAPPER;
       const targetArtworkResolver = normalizeOptionalAddress(artworkResolverInput) || resolver;
 
       try {
@@ -371,9 +372,9 @@ export function CreateFlow() {
       let codeURI = "";
       let effectiveAlgorithmHash = bundle.packageHash;
       let effectiveMintPriceWei = initialMintPriceWei;
-      let effectiveSubnameRegistrar = targetSubnameRegistrar;
-      let effectiveSubnameParentNode = targetSubnameRegistrar ? collectionNode : undefined;
-      let effectiveArtworkResolver = targetSubnameRegistrar ? targetArtworkResolver : undefined;
+      const effectiveSubnameRegistrar = targetSubnameRegistrar;
+      const effectiveSubnameParentNode = collectionNode;
+      const effectiveArtworkResolver = targetArtworkResolver;
 
       if (projectContract === zeroAddress) {
         setStatus("Checking factory compatibility");
@@ -476,48 +477,53 @@ export function CreateFlow() {
         setMintPriceInputEth(formatEther(existingMintPriceWei));
       }
 
-      if (targetSubnameRegistrar) {
-        setStatus("Configuring package ENS subname authority");
-        const [currentRegistrar, currentParentNode, currentResolver] = await Promise.all([
-          publicClient.readContract({
-            address: projectContract,
-            abi: artNamespaceProjectAbi,
-            functionName: "ensSubnameRegistrar",
-          }),
-          publicClient.readContract({
-            address: projectContract,
-            abi: artNamespaceProjectAbi,
-            functionName: "ensParentNode",
-          }),
-          publicClient.readContract({
-            address: projectContract,
-            abi: artNamespaceProjectAbi,
-            functionName: "ensResolver",
-          }),
-        ]).catch(() => [zeroAddress, `0x${"00".repeat(32)}` as `0x${string}`, zeroAddress] as const);
+      setStatus("Configuring package ENS subname authority");
+      const [currentRegistrar, currentParentNode, currentResolver] = await Promise.all([
+        publicClient.readContract({
+          address: projectContract,
+          abi: artNamespaceProjectAbi,
+          functionName: "ensSubnameRegistrar",
+        }),
+        publicClient.readContract({
+          address: projectContract,
+          abi: artNamespaceProjectAbi,
+          functionName: "ensParentNode",
+        }),
+        publicClient.readContract({
+          address: projectContract,
+          abi: artNamespaceProjectAbi,
+          functionName: "ensResolver",
+        }),
+      ]).catch(() => [zeroAddress, `0x${"00".repeat(32)}` as `0x${string}`, zeroAddress] as const);
 
-        if (
-          !sameAddress(currentRegistrar, targetSubnameRegistrar) ||
-          currentParentNode.toLowerCase() !== collectionNode.toLowerCase() ||
-          !sameAddress(currentResolver, targetArtworkResolver)
-        ) {
-          const configureTx = await walletClient.writeContract({
+      if (
+        !sameAddress(currentRegistrar, targetSubnameRegistrar) ||
+        currentParentNode.toLowerCase() !== collectionNode.toLowerCase() ||
+        !sameAddress(currentResolver, targetArtworkResolver)
+      ) {
+        if (isSepoliaNameWrapper(targetSubnameRegistrar)) {
+          setStatus("Approving package contract to create ENS artwork subnames");
+          await ensureNameWrapperApproval({
+            publicClient,
+            walletClient,
             account: address,
-            chain: sepolia,
-            address: projectContract,
-            abi: artNamespaceProjectAbi,
-            functionName: "configureEnsSubnames",
-            args: [targetSubnameRegistrar, collectionNode, targetArtworkResolver, 0n, 0, 0n],
+            operator: projectContract,
           });
-          const configureReceipt = await publicClient.waitForTransactionReceipt({ hash: configureTx });
-          if (configureReceipt.status !== "success") {
-            throw new Error("The ENS subname configuration transaction reverted.");
-          }
+          setStatus("Configuring package ENS subname authority");
         }
-      } else {
-        effectiveSubnameRegistrar = undefined;
-        effectiveSubnameParentNode = undefined;
-        effectiveArtworkResolver = undefined;
+
+        const configureTx = await walletClient.writeContract({
+          account: address,
+          chain: sepolia,
+          address: projectContract,
+          abi: artNamespaceProjectAbi,
+          functionName: "configureEnsSubnames",
+          args: [targetSubnameRegistrar, collectionNode, targetArtworkResolver, 0n, 0, 0n],
+        });
+        const configureReceipt = await publicClient.waitForTransactionReceipt({ hash: configureTx });
+        if (configureReceipt.status !== "success") {
+          throw new Error("The ENS subname configuration transaction reverted.");
+        }
       }
 
       const record: CollectionRecord = {
@@ -669,10 +675,16 @@ export function CreateFlow() {
                 setPublished(null);
                 setError(null);
               }}
-              placeholder="0x... collection subregistry or registrar"
+              placeholder={`Defaults to Sepolia Name Wrapper ${SEPOLIA_NAME_WRAPPER}`}
               value={subnameRegistrarInput}
             />
-            {invalidSubnameRegistrar ? <p className="mt-2 text-xs text-red-700">Enter a valid registrar address.</p> : null}
+            {invalidSubnameRegistrar ? (
+              <p className="mt-2 text-xs text-red-700">Enter a valid registrar address.</p>
+            ) : (
+              <p className="mt-2 text-xs leading-5 text-neutral-600">
+                Leave blank to let ArtNamespace use the Sepolia ENS Name Wrapper for mint-time artwork subnames.
+              </p>
+            )}
             <label className="mt-4 block text-xs uppercase tracking-wide text-neutral-500">Artwork resolver</label>
             <input
               className="mt-2 w-full border border-line p-2 font-mono text-sm disabled:bg-neutral-100"
