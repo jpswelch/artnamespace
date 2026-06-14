@@ -79,6 +79,9 @@ export type CollectionRecord = {
   factory?: `0x${string}`;
   contract?: `0x${string}`;
   mintPriceWei: string;
+  subnameRegistrar?: `0x${string}`;
+  subnameParentNode?: `0x${string}`;
+  artworkResolver?: `0x${string}`;
   publishedAt: string;
 };
 

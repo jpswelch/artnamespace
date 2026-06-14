@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Database, EyeOff, Loader2, Sparkles } from "lucide-react";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import { sepolia } from "wagmi/chains";
+import { zeroAddress } from "viem";
 import { RenderFrame } from "@/components/render-frame";
 import { RecordTable } from "@/components/record-table";
 import { StatusPill } from "@/components/status-pill";
@@ -33,13 +34,15 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
   const [status, setStatus] = useState("Ready to mint a deterministic output");
   const [error, setError] = useState<string | null>(null);
   const [previewTokenId, setPreviewTokenId] = useState(1);
+  const [contractNextArtworkENS, setContractNextArtworkENS] = useState<string | null>(null);
   const [projectContract, setProjectContract] = useState<`0x${string}` | undefined>();
   const [mintPriceWei, setMintPriceWei] = useState<bigint>(0n);
+  const [ensSubnameRegistrar, setEnsSubnameRegistrar] = useState<`0x${string}` | undefined>();
 
   const nextSeed = useMemo(() => createSeed(`${collectionENS}-${previewTokenId}`), [collectionENS, previewTokenId]);
   const params = useMemo(() => generateParams(bundle.paramsSchema, nextSeed), [bundle.paramsSchema, nextSeed]);
   const nextTokenId = previewTokenId;
-  const artworkENS = getArtworkEns(nextTokenId, collectionENS);
+  const artworkENS = contractNextArtworkENS || getArtworkEns(nextTokenId, collectionENS);
   const renderKey = `${artworkENS}-${nextSeed}-${bundle.packageHash}`;
   const output = renderedOutput?.key === renderKey ? renderedOutput.output : null;
 
@@ -114,15 +117,33 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
             functionName: "mintPriceWei",
           }),
         ]);
+        const [nextArtwork, registrar] = await Promise.all([
+          publicClient
+            .readContract({
+              address: projectContract,
+              abi: artNamespaceProjectAbi,
+              functionName: "nextArtworkENS",
+            })
+            .catch(() => getArtworkEns(Number(tokenId), collectionENS)),
+          publicClient
+            .readContract({
+              address: projectContract,
+              abi: artNamespaceProjectAbi,
+              functionName: "ensSubnameRegistrar",
+            })
+            .catch(() => zeroAddress),
+        ]);
         setPreviewTokenId(Number(tokenId));
+        setContractNextArtworkENS(nextArtwork);
         setMintPriceWei(price);
+        setEnsSubnameRegistrar(registrar === zeroAddress ? undefined : registrar);
       } catch {
         setStatus("Package contract was found, but it is not reachable on Sepolia yet");
       }
     }
 
     void loadProjectContract();
-  }, [projectContract, publicClient]);
+  }, [collectionENS, projectContract, publicClient]);
 
   async function mint() {
     if (!output) {
@@ -163,7 +184,13 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
       }
       setMintPriceWei(onchainPrice);
 
-      const finalArtworkENS = getArtworkEns(tokenId, collectionENS);
+      const finalArtworkENS = await publicClient
+        .readContract({
+          address: projectContract,
+          abi: artNamespaceProjectAbi,
+          functionName: "nextArtworkENS",
+        })
+        .catch(() => getArtworkEns(tokenId, collectionENS));
       const algorithmHash = record?.algorithmHash || bundle.packageHash;
       const paramsHash = hashJson(output.params);
       const uniquenessHash = createUniquenessHash({
@@ -245,13 +272,21 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
         address: projectContract,
         abi: artNamespaceProjectAbi,
         functionName: "mintArtwork",
-        args: [address, finalArtworkENS, metadataUpload.uri, uniquenessHash],
+        args: [address, metadataUpload.uri, uniquenessHash],
         value: onchainPrice,
       });
       await publicClient.waitForTransactionReceipt({ hash: tx });
 
       saveArtwork({ ...manifest, artworkENS: finalArtworkENS });
+      const nextArtworkAfterMint = await publicClient
+        .readContract({
+          address: projectContract,
+          abi: artNamespaceProjectAbi,
+          functionName: "nextArtworkENS",
+        })
+        .catch(() => getArtworkEns(tokenId + 1, collectionENS));
       setPreviewTokenId(tokenId + 1);
+      setContractNextArtworkENS(nextArtworkAfterMint);
 
       try {
         setStatus(`Writing ENS records for ${finalArtworkENS}`);
@@ -359,6 +394,9 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
           <div className="min-h-12 text-sm">
             <p className="text-neutral-700">{status}</p>
             {!projectContract ? <p className="mt-2 text-amber-800">Publish this package contract before live minting.</p> : null}
+            {projectContract && !ensSubnameRegistrar ? (
+              <p className="mt-2 text-amber-800">This package contract is not configured to create ENS artwork subnames yet.</p>
+            ) : null}
             {error ? <p className="mt-2 text-red-700">{error}</p> : null}
           </div>
 

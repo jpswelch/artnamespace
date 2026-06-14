@@ -13,6 +13,7 @@ flowchart LR
   Factory --> Project[Per-package ERC-721]
   Mint --> Project
   Mint --> WalrusAPI
+  Project --> ENSSubnames[Collection Subregistry or Registrar]
   Mint --> ENS
   ENS --> Provenance[Artwork Provenance Page]
   Walrus --> Provenance
@@ -25,13 +26,14 @@ flowchart LR
 2. The browser validates the package and lets the artist choose the one-time fixed mint price.
 3. The extracted algorithm bundle is uploaded to Walrus.
 4. The factory deploys a per-package ERC-721 with that fixed mint price.
-5. Collection text records are written to the pre-created ENS collection name.
+5. Collection text records are written to the ENS collection name.
 6. Collector renders the next deterministic output.
 7. Params, render, NFT metadata, and provenance manifest are uploaded to Walrus.
-8. The package ERC-721 is minted with the metadata URI, uniqueness hash, and package fixed mint price.
-9. Artwork text records are written to the pre-created ENS artwork name.
-10. The provenance page reads ENS and Walrus records back live.
+8. The package ERC-721 derives the next artwork ENS name, mints with the metadata URI, uniqueness hash, and package fixed mint price.
+9. If configured, the package ERC-721 calls the collection registrar/subregistry to create the numbered artwork subname for the collector.
+10. Artwork text records are written to the minted ENS artwork name.
+11. The provenance page reads ENS and Walrus records back live.
 
 ## ENS Mode
 
-The MVP uses `precreated` ENS mode. The app writes records to existing names that the demo wallet controls. This keeps the live demo focused on real resolver operations without risking subname registrar complexity during the hackathon.
+The collection name is prepared by the artist. The package ERC-721 owns the minted artwork numbering and can be configured with a collection registrar/subregistry plus resolver so mints create `001.<collection>.<artist>.eth`, `002.<collection>.<artist>.eth`, and later artwork names under the correct ENS structure.

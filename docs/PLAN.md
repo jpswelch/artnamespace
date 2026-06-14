@@ -14,7 +14,8 @@ The MVP path is artist upload/publish -> collector mint -> artwork provenance pa
 
 - Sepolia wallet with test ETH
 - New Sepolia ENS artist name, not `blkcipher.eth`
-- Pre-created `curvefields.<artistRoot>` and first artwork subnames
+- Prepared collection subname such as `curvefields.<artistRoot>`
+- Collection subregistry/registrar permission for the package ERC-721 to issue numbered artwork subnames
 - Deployed `ArtNamespaceFactory` contract
 - Walrus Testnet publisher and aggregator URLs
 

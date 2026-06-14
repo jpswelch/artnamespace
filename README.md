@@ -17,10 +17,11 @@ Open `http://localhost:3000`.
 ## Required Live Demo Setup
 
 1. Register a new Sepolia ENS name for the artist demo, such as `artnamespace-demo.eth`.
-2. Pre-create `curvefields.<artistRoot>` and at least one artwork subname such as `001.curvefields.<artistRoot>`.
-3. Configure the resolver so the connected wallet can set text records.
+2. Create the collection subname, such as `curvefields.<artistRoot>`, and configure its resolver.
+3. Grant the deployed package ERC-721 contract, or an adapter registrar it calls, permission to create artwork subnames under the collection namespace.
 4. Deploy `contracts/src/ArtNamespaceFactory.sol` to Sepolia with `make deploy-factory`.
 5. Set `NEXT_PUBLIC_ARTIST_ENS_ROOT`, `NEXT_PUBLIC_ARTNAMESPACE_FACTORY`, `NEXT_PUBLIC_SEPOLIA_RPC_URL`, `WALRUS_PUBLISHER_URL`, and `WALRUS_AGGREGATOR_URL`.
+6. If the collection should issue ENS artwork subnames during mint, enter that collection's subregistry/registrar address on `/create` while publishing.
 
 ## Vercel Deployment
 
@@ -32,7 +33,9 @@ Set the same environment variables from `.env.example` in Vercel. Do not set `WA
 
 - Resolves artist and collection names.
 - Deploys one ERC-721 package contract per artist project through the factory.
-- Writes prefixed provenance text records to pre-created collection and artwork ENS names.
+- Lets the package ERC-721 derive artwork names like `001.curvefields.artist.eth`.
+- Can call a configured collection registrar/subregistry during mint so artwork subnames are created under the collection.
+- Writes prefixed provenance text records to collection and artwork ENS names.
 - Reads records back into collection and provenance pages.
 - Uses ENS as the canonical artist -> collection -> artwork namespace.
 

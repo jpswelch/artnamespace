@@ -17,15 +17,17 @@ ArtNamespace lets artists publish creative-code algorithms under an ENS name. Ea
 - Load the Curvefields demo package.
 - Preview deterministic outputs.
 - Publish the algorithm bundle to Walrus.
-- Write collection records to `curvefields.<artistRoot>`.
+- Deploy the package ERC-721 and write collection records to `curvefields.<artistRoot>`.
+- Show that the package contract is configured to issue numbered artwork subnames under the collection.
 
 ## 1:30-2:30 Collector Flow
 
 - Open `/collection/curvefields.<artistRoot>`.
 - Render the next deterministic output.
 - Mint a free Sepolia NFT.
+- The package contract assigns `001.curvefields.<artistRoot>` as the artwork ENS name.
 - Upload params, render, metadata, and provenance manifest to Walrus.
-- Write artwork records to `001.curvefields.<artistRoot>`.
+- Write artwork records to the minted artwork ENS name.
 
 ## 2:30-3:20 Provenance
 

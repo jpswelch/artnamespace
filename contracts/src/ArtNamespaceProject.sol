@@ -1,15 +1,30 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+interface IEnsSubnameRegistrar {
+    function setSubnodeRecord(
+        bytes32 parentNode,
+        string calldata label,
+        address owner,
+        address resolver,
+        uint64 ttl,
+        uint32 fuses,
+        uint64 expiry
+    ) external returns (uint256);
+}
+
 contract ArtNamespaceProject {
     error AlreadyMinted(bytes32 uniquenessHash);
+    error EnsSubnameCreationFailed(address registrar, string label, bytes reason);
     error InvalidRecipient();
+    error InvalidEnsSubnameConfig();
     error MaxSupplyReached();
     error MintPriceNotMet(uint256 required, uint256 received);
     error NonexistentToken(uint256 tokenId);
     error NotApproved();
     error NotOwner();
     error NotTokenOwner();
+    error ReentrantCall();
     error WithdrawFailed();
 
     string public name;
@@ -22,6 +37,13 @@ contract ArtNamespaceProject {
     uint256 public maxSupply;
     uint256 public mintPriceWei;
     uint256 public nextTokenId = 1;
+    address public ensSubnameRegistrar;
+    bytes32 public ensParentNode;
+    address public ensResolver;
+    uint64 public ensSubnameTtl;
+    uint32 public ensSubnameFuses;
+    uint64 public ensSubnameExpiry;
+    bool private _minting;
 
     mapping(uint256 => address) public ownerOf;
     mapping(address => uint256) public balanceOf;
@@ -38,6 +60,15 @@ contract ArtNamespaceProject {
     event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event Withdrawal(address indexed recipient, uint256 amount);
+    event EnsSubnamesConfigured(
+        address indexed registrar,
+        bytes32 indexed parentNode,
+        address indexed resolver,
+        uint64 ttl,
+        uint32 fuses,
+        uint64 expiry
+    );
+    event ArtworkSubnameCreated(uint256 indexed tokenId, string label, string artworkENS, address indexed owner);
     event ArtworkMinted(
         uint256 indexed tokenId,
         address indexed owner,
@@ -49,6 +80,13 @@ contract ArtNamespaceProject {
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
         _;
+    }
+
+    modifier nonReentrant() {
+        if (_minting) revert ReentrantCall();
+        _minting = true;
+        _;
+        _minting = false;
     }
 
     constructor(
@@ -91,18 +129,41 @@ contract ArtNamespaceProject {
         emit Withdrawal(recipient, amount);
     }
 
+    function configureEnsSubnames(
+        address registrar,
+        bytes32 parentNode,
+        address resolver,
+        uint64 ttl,
+        uint32 fuses,
+        uint64 expiry
+    ) external onlyOwner {
+        if (registrar != address(0) && (parentNode == bytes32(0) || resolver == address(0))) {
+            revert InvalidEnsSubnameConfig();
+        }
+
+        ensSubnameRegistrar = registrar;
+        ensParentNode = parentNode;
+        ensResolver = resolver;
+        ensSubnameTtl = ttl;
+        ensSubnameFuses = fuses;
+        ensSubnameExpiry = expiry;
+
+        emit EnsSubnamesConfigured(registrar, parentNode, resolver, ttl, fuses, expiry);
+    }
+
     function mintArtwork(
         address to,
-        string calldata artworkENS,
         string calldata metadataURI,
         bytes32 uniquenessHash
-    ) external payable returns (uint256 tokenId) {
+    ) external payable nonReentrant returns (uint256 tokenId) {
         if (to == address(0)) revert InvalidRecipient();
         if (msg.value < mintPriceWei) revert MintPriceNotMet(mintPriceWei, msg.value);
         if (nextTokenId > maxSupply) revert MaxSupplyReached();
         if (usedUniquenessHashes[uniquenessHash]) revert AlreadyMinted(uniquenessHash);
 
         tokenId = nextTokenId++;
+        string memory label = artworkLabel(tokenId);
+        string memory artworkENS = artworkENSFor(tokenId);
         usedUniquenessHashes[uniquenessHash] = true;
         ownerOf[tokenId] = to;
         balanceOf[to] += 1;
@@ -110,8 +171,27 @@ contract ArtNamespaceProject {
         tokenUniquenessHash[tokenId] = uniquenessHash;
         _tokenURIs[tokenId] = metadataURI;
 
+        if (ensSubnameRegistrar != address(0)) {
+            _createEnsSubname(tokenId, label, artworkENS, to);
+        }
+
         emit Transfer(address(0), to, tokenId);
         emit ArtworkMinted(tokenId, to, artworkENS, metadataURI, uniquenessHash);
+    }
+
+    function nextArtworkENS() external view returns (string memory) {
+        return artworkENSFor(nextTokenId);
+    }
+
+    function artworkENSFor(uint256 tokenId) public view returns (string memory) {
+        return string.concat(artworkLabel(tokenId), ".", collectionENS);
+    }
+
+    function artworkLabel(uint256 tokenId) public pure returns (string memory) {
+        string memory raw = _toString(tokenId);
+        if (tokenId < 10) return string.concat("00", raw);
+        if (tokenId < 100) return string.concat("0", raw);
+        return raw;
     }
 
     function tokenURI(uint256 tokenId) external view returns (string memory) {
@@ -155,5 +235,46 @@ contract ArtNamespaceProject {
 
     function safeTransferFrom(address from, address to, uint256 tokenId, bytes calldata) external {
         transferFrom(from, to, tokenId);
+    }
+
+    function _createEnsSubname(
+        uint256 tokenId,
+        string memory label,
+        string memory artworkENS,
+        address to
+    ) private {
+        try IEnsSubnameRegistrar(ensSubnameRegistrar).setSubnodeRecord(
+            ensParentNode,
+            label,
+            to,
+            ensResolver,
+            ensSubnameTtl,
+            ensSubnameFuses,
+            ensSubnameExpiry
+        ) returns (uint256) {
+            emit ArtworkSubnameCreated(tokenId, label, artworkENS, to);
+        } catch (bytes memory reason) {
+            revert EnsSubnameCreationFailed(ensSubnameRegistrar, label, reason);
+        }
+    }
+
+    function _toString(uint256 value) private pure returns (string memory) {
+        if (value == 0) return "0";
+
+        uint256 temp = value;
+        uint256 digits;
+        while (temp != 0) {
+            digits++;
+            temp /= 10;
+        }
+
+        bytes memory buffer = new bytes(digits);
+        while (value != 0) {
+            digits -= 1;
+            buffer[digits] = bytes1(uint8(48 + uint256(value % 10)));
+            value /= 10;
+        }
+
+        return string(buffer);
     }
 }

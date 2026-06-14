@@ -17,6 +17,9 @@ export const ENS_TEXT_KEYS = {
   maxSupply: "artnamespace.maxSupply",
   manifestURI: "artnamespace.manifestURI",
   chain: "artnamespace.chain",
+  subnameRegistrar: "artnamespace.subnameRegistrar",
+  subnameParentNode: "artnamespace.subnameParentNode",
+  artworkResolver: "artnamespace.artworkResolver",
 } as const;
 
 export const DEFAULT_COLLECTION_SLUG = "curvefields";

@@ -38,6 +38,12 @@ function sameAddress(a?: string, b?: string) {
   return Boolean(a && b && a.toLowerCase() === b.toLowerCase());
 }
 
+function normalizeOptionalAddress(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return isAddress(trimmed) ? (trimmed as `0x${string}`) : undefined;
+}
+
 export function CreateFlow() {
   const [pkg, setPkg] = useState<ArtPackage | null>(null);
   const [status, setStatus] = useState<string>("Choose or upload an algorithm package");
@@ -45,6 +51,8 @@ export function CreateFlow() {
   const [publishing, setPublishing] = useState(false);
   const [published, setPublished] = useState<CollectionRecord | null>(null);
   const [mintPriceInputEth, setMintPriceInputEth] = useState("0");
+  const [subnameRegistrarInput, setSubnameRegistrarInput] = useState("");
+  const [artworkResolverInput, setArtworkResolverInput] = useState("");
   const [creatorEnsOverride, setCreatorEnsOverride] = useState<{ address?: `0x${string}`; value: string } | null>(null);
   const { address } = useAccount();
   const { ensName, isLoading: loadingEnsName } = useSepoliaEnsName(address);
@@ -70,6 +78,10 @@ export function CreateFlow() {
   const activePublished = published?.collectionENS === collectionEns ? published : null;
   const algorithmHash = pkg ? packageHash(pkg) : null;
   const factory = getFactoryAddress();
+  const subnameRegistrar = normalizeOptionalAddress(subnameRegistrarInput);
+  const artworkResolver = normalizeOptionalAddress(artworkResolverInput);
+  const invalidSubnameRegistrar = Boolean(subnameRegistrarInput.trim() && !subnameRegistrar);
+  const invalidArtworkResolver = Boolean(artworkResolverInput.trim() && !artworkResolver);
   const missingCreatorEns = Boolean(address && !loadingEnsName && !creatorEns && !creatorEnsText);
   const creatorEnsHasProblem = Boolean(address && (missingCreatorEns || invalidCreatorEns));
   const creatorEnsStatus = !address
@@ -83,7 +95,15 @@ export function CreateFlow() {
         : loadingEnsName
           ? "Checking reverse ENS. You can enter a Sepolia ENS name manually if it has not updated yet."
           : "No Sepolia reverse ENS name was found. Enter a Sepolia ENS name this wallet owns or manages.";
-  const canPublish = Boolean(pkg && address && creatorEns && !publishing && !activePublished);
+  const canPublish = Boolean(
+    pkg &&
+      address &&
+      creatorEns &&
+      !publishing &&
+      !activePublished &&
+      !invalidSubnameRegistrar &&
+      !invalidArtworkResolver,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -99,6 +119,8 @@ export function CreateFlow() {
         if (!cancelled) {
           setPublished(matchingLocal);
           setMintPriceInputEth(formatEther(BigInt(matchingLocal.mintPriceWei || "0")));
+          setSubnameRegistrarInput(matchingLocal.subnameRegistrar || "");
+          setArtworkResolverInput(matchingLocal.artworkResolver || "");
           setStatus("Collection already published");
         }
         return;
@@ -124,6 +146,9 @@ export function CreateFlow() {
             ENS_TEXT_KEYS.projectContract,
             ENS_TEXT_KEYS.contract,
             ENS_TEXT_KEYS.mintPriceWei,
+            ENS_TEXT_KEYS.subnameRegistrar,
+            ENS_TEXT_KEYS.subnameParentNode,
+            ENS_TEXT_KEYS.artworkResolver,
           ],
         });
         const projectContract = resolveProjectContract(records, matchingLocal);
@@ -149,6 +174,17 @@ export function CreateFlow() {
           factory: restoredFactory,
           contract: projectContract,
           mintPriceWei: records[ENS_TEXT_KEYS.mintPriceWei] || "0",
+          subnameRegistrar:
+            records[ENS_TEXT_KEYS.subnameRegistrar] && isAddress(records[ENS_TEXT_KEYS.subnameRegistrar])
+              ? (records[ENS_TEXT_KEYS.subnameRegistrar] as `0x${string}`)
+              : undefined,
+          subnameParentNode: records[ENS_TEXT_KEYS.subnameParentNode]?.startsWith("0x")
+            ? (records[ENS_TEXT_KEYS.subnameParentNode] as `0x${string}`)
+            : undefined,
+          artworkResolver:
+            records[ENS_TEXT_KEYS.artworkResolver] && isAddress(records[ENS_TEXT_KEYS.artworkResolver])
+              ? (records[ENS_TEXT_KEYS.artworkResolver] as `0x${string}`)
+              : undefined,
           publishedAt: matchingLocal?.publishedAt || new Date().toISOString(),
         };
 
@@ -168,6 +204,8 @@ export function CreateFlow() {
         if (!cancelled && isCurrentFactoryRecord && isOwnedByCurrentWallet) {
           setPublished(restored);
           setMintPriceInputEth(formatEther(BigInt(restored.mintPriceWei || "0")));
+          setSubnameRegistrarInput(restored.subnameRegistrar || "");
+          setArtworkResolverInput(restored.artworkResolver || "");
           setStatus("Collection already published");
         } else if (!cancelled && isCurrentFactoryRecord) {
           setPublished(null);
@@ -181,6 +219,8 @@ export function CreateFlow() {
         if (!cancelled && matchingLocal && sameAddress(matchingLocal.factory, factory)) {
           setPublished(matchingLocal);
           setMintPriceInputEth(formatEther(BigInt(matchingLocal.mintPriceWei || "0")));
+          setSubnameRegistrarInput(matchingLocal.subnameRegistrar || "");
+          setArtworkResolverInput(matchingLocal.artworkResolver || "");
           setStatus("Collection already published");
         }
       }
@@ -264,6 +304,16 @@ export function CreateFlow() {
       return;
     }
 
+    if (invalidSubnameRegistrar) {
+      setError("Enter a valid artwork subname registrar address, or leave it blank.");
+      return;
+    }
+
+    if (invalidArtworkResolver) {
+      setError("Enter a valid artwork resolver address, or leave it blank.");
+      return;
+    }
+
     setPublishing(true);
     setError(null);
 
@@ -286,6 +336,9 @@ export function CreateFlow() {
           `No resolver is configured for ${targetCollectionEns}. Create or configure that collection subname first, then publish again.`,
         );
       }
+      const collectionNode = namehash(normalize(targetCollectionEns));
+      const targetSubnameRegistrar = normalizeOptionalAddress(subnameRegistrarInput);
+      const targetArtworkResolver = normalizeOptionalAddress(artworkResolverInput) || resolver;
 
       try {
         await publicClient.simulateContract({
@@ -293,7 +346,7 @@ export function CreateFlow() {
           address: resolver,
           abi: publicResolverAbi,
           functionName: "setText",
-          args: [namehash(normalize(targetCollectionEns)), "artnamespace.preflight", "ok"],
+          args: [collectionNode, "artnamespace.preflight", "ok"],
         });
       } catch {
         throw new Error(
@@ -318,6 +371,9 @@ export function CreateFlow() {
       let codeURI = "";
       let effectiveAlgorithmHash = bundle.packageHash;
       let effectiveMintPriceWei = initialMintPriceWei;
+      let effectiveSubnameRegistrar = targetSubnameRegistrar;
+      let effectiveSubnameParentNode = targetSubnameRegistrar ? collectionNode : undefined;
+      let effectiveArtworkResolver = targetSubnameRegistrar ? targetArtworkResolver : undefined;
 
       if (projectContract === zeroAddress) {
         setStatus("Checking factory compatibility");
@@ -420,6 +476,50 @@ export function CreateFlow() {
         setMintPriceInputEth(formatEther(existingMintPriceWei));
       }
 
+      if (targetSubnameRegistrar) {
+        setStatus("Configuring package ENS subname authority");
+        const [currentRegistrar, currentParentNode, currentResolver] = await Promise.all([
+          publicClient.readContract({
+            address: projectContract,
+            abi: artNamespaceProjectAbi,
+            functionName: "ensSubnameRegistrar",
+          }),
+          publicClient.readContract({
+            address: projectContract,
+            abi: artNamespaceProjectAbi,
+            functionName: "ensParentNode",
+          }),
+          publicClient.readContract({
+            address: projectContract,
+            abi: artNamespaceProjectAbi,
+            functionName: "ensResolver",
+          }),
+        ]).catch(() => [zeroAddress, `0x${"00".repeat(32)}` as `0x${string}`, zeroAddress] as const);
+
+        if (
+          !sameAddress(currentRegistrar, targetSubnameRegistrar) ||
+          currentParentNode.toLowerCase() !== collectionNode.toLowerCase() ||
+          !sameAddress(currentResolver, targetArtworkResolver)
+        ) {
+          const configureTx = await walletClient.writeContract({
+            account: address,
+            chain: sepolia,
+            address: projectContract,
+            abi: artNamespaceProjectAbi,
+            functionName: "configureEnsSubnames",
+            args: [targetSubnameRegistrar, collectionNode, targetArtworkResolver, 0n, 0, 0n],
+          });
+          const configureReceipt = await publicClient.waitForTransactionReceipt({ hash: configureTx });
+          if (configureReceipt.status !== "success") {
+            throw new Error("The ENS subname configuration transaction reverted.");
+          }
+        }
+      } else {
+        effectiveSubnameRegistrar = undefined;
+        effectiveSubnameParentNode = undefined;
+        effectiveArtworkResolver = undefined;
+      }
+
       const record: CollectionRecord = {
         artistENS: creatorEns,
         collectionENS: targetCollectionEns,
@@ -429,6 +529,9 @@ export function CreateFlow() {
         factory,
         contract: projectContract,
         mintPriceWei: effectiveMintPriceWei.toString(),
+        subnameRegistrar: effectiveSubnameRegistrar,
+        subnameParentNode: effectiveSubnameParentNode,
+        artworkResolver: effectiveArtworkResolver,
         publishedAt: new Date().toISOString(),
       };
 
@@ -449,6 +552,9 @@ export function CreateFlow() {
           [ENS_TEXT_KEYS.mintPriceWei]: effectiveMintPriceWei.toString(),
           [ENS_TEXT_KEYS.maxSupply]: String(packageForPublish.manifest.maxSupply),
           [ENS_TEXT_KEYS.chain]: "sepolia",
+          [ENS_TEXT_KEYS.subnameRegistrar]: effectiveSubnameRegistrar,
+          [ENS_TEXT_KEYS.subnameParentNode]: effectiveSubnameParentNode,
+          [ENS_TEXT_KEYS.artworkResolver]: effectiveArtworkResolver,
         },
       });
 
@@ -554,6 +660,32 @@ export function CreateFlow() {
               }}
               value={mintPriceInputEth}
             />
+            <label className="mt-4 block text-xs uppercase tracking-wide text-neutral-500">Artwork subname registrar</label>
+            <input
+              className="mt-2 w-full border border-line p-2 font-mono text-sm disabled:bg-neutral-100"
+              disabled={Boolean(activePublished)}
+              onChange={(event) => {
+                setSubnameRegistrarInput(event.target.value);
+                setPublished(null);
+                setError(null);
+              }}
+              placeholder="0x... collection subregistry or registrar"
+              value={subnameRegistrarInput}
+            />
+            {invalidSubnameRegistrar ? <p className="mt-2 text-xs text-red-700">Enter a valid registrar address.</p> : null}
+            <label className="mt-4 block text-xs uppercase tracking-wide text-neutral-500">Artwork resolver</label>
+            <input
+              className="mt-2 w-full border border-line p-2 font-mono text-sm disabled:bg-neutral-100"
+              disabled={Boolean(activePublished)}
+              onChange={(event) => {
+                setArtworkResolverInput(event.target.value);
+                setPublished(null);
+                setError(null);
+              }}
+              placeholder="Defaults to the collection resolver"
+              value={artworkResolverInput}
+            />
+            {invalidArtworkResolver ? <p className="mt-2 text-xs text-red-700">Enter a valid resolver address.</p> : null}
             <dl className="mt-4 space-y-2 font-mono text-xs">
               <div className="flex justify-between gap-3">
                 <dt>Package</dt>
@@ -601,6 +733,9 @@ export function CreateFlow() {
               [ENS_TEXT_KEYS.projectContract]: activePublished.contract,
               [ENS_TEXT_KEYS.contract]: activePublished.contract,
               [ENS_TEXT_KEYS.mintPriceWei]: activePublished.mintPriceWei,
+              [ENS_TEXT_KEYS.subnameRegistrar]: activePublished.subnameRegistrar,
+              [ENS_TEXT_KEYS.subnameParentNode]: activePublished.subnameParentNode,
+              [ENS_TEXT_KEYS.artworkResolver]: activePublished.artworkResolver,
             }}
           />
           <Link className="mt-5 inline-flex border border-ink px-4 py-2 text-sm hover:bg-paper" href={`/collection/${activePublished.collectionENS}`}>

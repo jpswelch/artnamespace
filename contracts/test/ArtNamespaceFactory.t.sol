@@ -37,8 +37,8 @@ contract ArtNamespaceFactoryTest {
             )
         );
 
-        first.mintArtwork(address(this), "001.curvefields.artist.eth", "walrus://metadata-one", keccak256("one"));
-        second.mintArtwork(address(this), "001.linefields.artist.eth", "walrus://metadata-two", keccak256("one"));
+        first.mintArtwork(address(this), "walrus://metadata-one", keccak256("one"));
+        second.mintArtwork(address(this), "walrus://metadata-two", keccak256("one"));
 
         assertEq(first.owner(), address(this), "first owner");
         assertEq(second.owner(), address(this), "second owner");
@@ -53,9 +53,9 @@ contract ArtNamespaceFactoryTest {
         ArtNamespaceProject project = createDefaultProject();
         bytes32 uniquenessHash = keccak256("duplicate");
 
-        project.mintArtwork(address(this), "001.curvefields.artist.eth", "walrus://one", uniquenessHash);
+        project.mintArtwork(address(this), "walrus://one", uniquenessHash);
 
-        try project.mintArtwork(address(this), "002.curvefields.artist.eth", "walrus://two", uniquenessHash) {
+        try project.mintArtwork(address(this), "walrus://two", uniquenessHash) {
             revert("expected duplicate to fail");
         } catch (bytes memory) {
             assertTrue(true, "duplicate rejected");
@@ -65,11 +65,13 @@ contract ArtNamespaceFactoryTest {
     function testInitialFreeMint() public {
         ArtNamespaceProject project = createDefaultProject();
 
-        uint256 tokenId = project.mintArtwork(address(this), "001.curvefields.artist.eth", "walrus://metadata", keccak256("free"));
+        uint256 tokenId = project.mintArtwork(address(this), "walrus://metadata", keccak256("free"));
 
         assertEq(project.mintPriceWei(), 0, "initial price");
         assertEq(tokenId, 1, "token id");
         assertEq(project.ownerOf(tokenId), address(this), "owner");
+        assertEq(project.tokenENS(tokenId), "001.curvefields.artist.eth", "artwork ens");
+        assertEq(project.nextArtworkENS(), "002.curvefields.artist.eth", "next ens");
     }
 
     function testInitialPaidMintSucceeds() public {
@@ -77,7 +79,6 @@ contract ArtNamespaceFactoryTest {
 
         uint256 tokenId = project.mintArtwork{value: 1 ether}(
             address(this),
-            "001.curvefields.artist.eth",
             "walrus://metadata",
             keccak256("paid")
         );
@@ -92,7 +93,6 @@ contract ArtNamespaceFactoryTest {
 
         try project.mintArtwork{value: 0.5 ether}(
             address(this),
-            "001.curvefields.artist.eth",
             "walrus://metadata",
             keccak256("underpaid")
         ) {
@@ -107,7 +107,6 @@ contract ArtNamespaceFactoryTest {
         Receiver receiver = new Receiver();
         project.mintArtwork{value: 1 ether}(
             address(this),
-            "001.curvefields.artist.eth",
             "walrus://metadata",
             keccak256("withdraw")
         );
@@ -132,12 +131,41 @@ contract ArtNamespaceFactoryTest {
             )
         );
 
-        project.mintArtwork(address(this), "001.tiny.artist.eth", "walrus://one", keccak256("one"));
+        project.mintArtwork(address(this), "walrus://one", keccak256("one"));
 
-        try project.mintArtwork(address(this), "002.tiny.artist.eth", "walrus://two", keccak256("two")) {
+        try project.mintArtwork(address(this), "walrus://two", keccak256("two")) {
             revert("expected max supply to fail");
         } catch (bytes memory) {
             assertTrue(true, "max supply rejected");
+        }
+    }
+
+    function testEnsSubnameRegistrarIsCalledOnMint() public {
+        ArtNamespaceProject project = createDefaultProject();
+        MockEnsSubnameRegistrar registrar = new MockEnsSubnameRegistrar();
+        bytes32 parentNode = keccak256("curvefields.artist.eth");
+        address resolver = address(0x1234);
+        address collector = address(0xBEEF);
+
+        project.configureEnsSubnames(address(registrar), parentNode, resolver, 0, 0, 9999999999);
+        uint256 tokenId = project.mintArtwork(collector, "walrus://metadata", keccak256("ens"));
+
+        assertEq(tokenId, 1, "token id");
+        assertEq(registrar.lastParentNode(), parentNode, "parent node");
+        assertEq(registrar.lastLabel(), "001", "label");
+        assertEq(registrar.lastOwner(), collector, "subname owner");
+        assertEq(registrar.lastResolver(), resolver, "resolver");
+        assertEq(project.tokenENS(tokenId), "001.curvefields.artist.eth", "token ens");
+    }
+
+    function testNonOwnerCannotConfigureEnsSubnames() public {
+        ArtNamespaceProject project = createDefaultProject();
+        ProjectCaller caller = new ProjectCaller();
+
+        try caller.configureEnsSubnames(project, address(0x1234), keccak256("node"), address(0x5678)) {
+            revert("expected non-owner configure to fail");
+        } catch (bytes memory) {
+            assertTrue(true, "non-owner rejected");
         }
     }
 
@@ -168,6 +196,10 @@ contract ArtNamespaceFactoryTest {
         if (actual != expected) revert(message);
     }
 
+    function assertEq(bytes32 actual, bytes32 expected, string memory message) internal pure {
+        if (actual != expected) revert(message);
+    }
+
     function assertEq(string memory actual, string memory expected, string memory message) internal pure {
         if (keccak256(bytes(actual)) != keccak256(bytes(expected))) revert(message);
     }
@@ -181,4 +213,45 @@ contract ArtNamespaceFactoryTest {
 
 contract Receiver {
     receive() external payable {}
+}
+
+contract MockEnsSubnameRegistrar {
+    bytes32 public lastParentNode;
+    string public lastLabel;
+    address public lastOwner;
+    address public lastResolver;
+    uint64 public lastTtl;
+    uint32 public lastFuses;
+    uint64 public lastExpiry;
+
+    function setSubnodeRecord(
+        bytes32 parentNode,
+        string calldata label,
+        address owner,
+        address resolver,
+        uint64 ttl,
+        uint32 fuses,
+        uint64 expiry
+    ) external returns (uint256) {
+        lastParentNode = parentNode;
+        lastLabel = label;
+        lastOwner = owner;
+        lastResolver = resolver;
+        lastTtl = ttl;
+        lastFuses = fuses;
+        lastExpiry = expiry;
+
+        return uint256(keccak256(abi.encode(parentNode, label)));
+    }
+}
+
+contract ProjectCaller {
+    function configureEnsSubnames(
+        ArtNamespaceProject project,
+        address registrar,
+        bytes32 parentNode,
+        address resolver
+    ) external {
+        project.configureEnsSubnames(registrar, parentNode, resolver, 0, 0, 0);
+    }
 }
