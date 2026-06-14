@@ -9,7 +9,7 @@ FACTORY_CONTRACT := src/ArtNamespaceFactory.sol:ArtNamespaceFactory
 SEPOLIA_RPC_URL ?= $(NEXT_PUBLIC_SEPOLIA_RPC_URL)
 DEPLOYER_ACCOUNT ?= testkey
 
-.PHONY: help contracts-build contracts-test deploy-factory deploy-factory-verify print-factory-env check-sepolia-env check-etherscan-env
+.PHONY: help contracts-build contracts-test ens-check deploy-factory deploy-factory-verify print-factory-env check-sepolia-env check-etherscan-env
 
 help:
 	@echo "ArtNamespace deployment helpers"
@@ -17,6 +17,7 @@ help:
 	@echo "Targets:"
 	@echo "  make contracts-build          Build Foundry contracts"
 	@echo "  make contracts-test           Run Foundry tests"
+	@echo "  make ens-check COLLECTION=... Check ENS subname readiness on Sepolia"
 	@echo "  make deploy-factory           Deploy ArtNamespaceFactory to Sepolia"
 	@echo "  make deploy-factory-verify    Deploy and verify ArtNamespaceFactory on Etherscan"
 	@echo "  make print-factory-env FACTORY=0x..."
@@ -35,6 +36,13 @@ contracts-build:
 
 contracts-test:
 	cd $(CONTRACTS_DIR) && forge test
+
+ens-check: check-sepolia-env
+	@if [ -z "$(COLLECTION)" ]; then \
+		echo "Usage: make ens-check COLLECTION=signalgarden.knicks-won.eth [PROJECT=0x...]"; \
+		exit 1; \
+	fi
+	cd apps/web && node scripts/check-ens-readiness.mjs "$(COLLECTION)" $(PROJECT)
 
 deploy-factory: check-sepolia-env
 	cd $(CONTRACTS_DIR) && forge create $(FACTORY_CONTRACT) \

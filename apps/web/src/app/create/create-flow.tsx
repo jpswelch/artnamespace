@@ -16,7 +16,7 @@ import type { ArtPackage, CollectionRecord } from "@/lib/art/types";
 import { artNamespaceFactoryAbi, artNamespaceProjectAbi } from "@/lib/contracts/artnamespace";
 import { ENS_TEXT_KEYS, getCollectionEns, getFactoryAddress } from "@/lib/constants";
 import { getResolverForName, publicResolverAbi, readEnsTextRecords, writeEnsTextRecords } from "@/lib/ens";
-import { SEPOLIA_NAME_WRAPPER, ensureNameWrapperApproval, isSepoliaNameWrapper } from "@/lib/ens-name-wrapper";
+import { SEPOLIA_NAME_WRAPPER, ensureNameWrapperSubnameAuthority, isSepoliaNameWrapper } from "@/lib/ens-name-wrapper";
 import { loadCollection, saveCollection } from "@/lib/local-cache";
 import { truncateMiddle } from "@/lib/format";
 import { parseMintPriceEth } from "@/lib/price";
@@ -496,22 +496,24 @@ export function CreateFlow() {
         }),
       ]).catch(() => [zeroAddress, `0x${"00".repeat(32)}` as `0x${string}`, zeroAddress] as const);
 
+      if (isSepoliaNameWrapper(targetSubnameRegistrar)) {
+        setStatus("Granting ArtNamespaceProject permission to create ENS token subnames");
+        await ensureNameWrapperSubnameAuthority({
+          publicClient,
+          walletClient,
+          account: address,
+          parentName: targetCollectionEns,
+          resolver: targetArtworkResolver,
+          operator: projectContract,
+        });
+        setStatus("Configuring package ENS subname authority");
+      }
+
       if (
         !sameAddress(currentRegistrar, targetSubnameRegistrar) ||
         currentParentNode.toLowerCase() !== collectionNode.toLowerCase() ||
         !sameAddress(currentResolver, targetArtworkResolver)
       ) {
-        if (isSepoliaNameWrapper(targetSubnameRegistrar)) {
-          setStatus("Approving package contract to create ENS artwork subnames");
-          await ensureNameWrapperApproval({
-            publicClient,
-            walletClient,
-            account: address,
-            operator: projectContract,
-          });
-          setStatus("Configuring package ENS subname authority");
-        }
-
         const configureTx = await walletClient.writeContract({
           account: address,
           chain: sepolia,
@@ -682,7 +684,7 @@ export function CreateFlow() {
               <p className="mt-2 text-xs text-red-700">Enter a valid registrar address.</p>
             ) : (
               <p className="mt-2 text-xs leading-5 text-neutral-600">
-                Leave blank to let ArtNamespace use the Sepolia ENS Name Wrapper for mint-time artwork subnames.
+                Leave blank to use the Sepolia Name Wrapper. ArtNamespace will wrap the collection name if needed and grant ArtNamespaceProject permission to create token subnames.
               </p>
             )}
             <label className="mt-4 block text-xs uppercase tracking-wide text-neutral-500">Artwork resolver</label>

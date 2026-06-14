@@ -10,7 +10,7 @@ interface IEnsSubnameRegistrar {
         uint64 ttl,
         uint32 fuses,
         uint64 expiry
-    ) external returns (uint256);
+    ) external returns (bytes32);
 }
 
 contract ArtNamespaceProject {
@@ -251,7 +251,7 @@ contract ArtNamespaceProject {
             ensSubnameTtl,
             ensSubnameFuses,
             ensSubnameExpiry
-        ) returns (uint256) {
+        ) returns (bytes32) {
             emit ArtworkSubnameCreated(tokenId, label, artworkENS, to);
         } catch (bytes memory reason) {
             revert EnsSubnameCreationFailed(ensSubnameRegistrar, label, reason);

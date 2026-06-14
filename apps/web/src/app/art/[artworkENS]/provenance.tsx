@@ -2,26 +2,126 @@
 
 import { useEffect, useState } from "react";
 import { ExternalLink } from "lucide-react";
+import { usePublicClient } from "wagmi";
+import { sepolia } from "wagmi/chains";
+import { zeroAddress, type PublicClient } from "viem";
 import { RecordTable } from "@/components/record-table";
 import { StatusPill } from "@/components/status-pill";
-import { ENS_TEXT_KEYS } from "@/lib/constants";
+import { fetchArtworkMetadata, metadataFeatures } from "@/lib/art/metadata";
+import { artNamespaceFactoryAbi, artNamespaceProjectAbi } from "@/lib/contracts/artnamespace";
+import { ENS_TEXT_KEYS, getFactoryAddress, parseArtworkEns } from "@/lib/constants";
 import { loadArtwork } from "@/lib/local-cache";
 import type { ProvenanceManifest } from "@/lib/art/types";
+import { resolveProjectContract } from "@/lib/project";
 import { walrusDirectUrl, walrusProxyUrl } from "@/lib/walrus";
 
+type OnchainArtwork = {
+  tokenId: number;
+  collectionENS: string;
+  contract: `0x${string}`;
+  owner: `0x${string}`;
+  metadataURI: string;
+  imageURI?: string;
+  features: Record<string, string>;
+};
+
+function compactRecords(records: Record<string, string>) {
+  return Object.fromEntries(Object.entries(records).filter(([, value]) => value.length > 0));
+}
+
+async function resolveProjectContractForCollection(client: PublicClient, collectionENS: string, records: Record<string, string>) {
+  const fromEns = resolveProjectContract(records);
+  if (fromEns) return fromEns;
+
+  const factory = getFactoryAddress();
+  if (!factory) return undefined;
+
+  const collectionHash = await client.readContract({
+    address: factory,
+    abi: artNamespaceFactoryAbi,
+    functionName: "hashCollectionENS",
+    args: [collectionENS],
+  });
+  const project = await client.readContract({
+    address: factory,
+    abi: artNamespaceFactoryAbi,
+    functionName: "projectForCollectionHash",
+    args: [collectionHash],
+  });
+
+  return project === zeroAddress ? undefined : project;
+}
+
+async function readOnchainArtwork(client: PublicClient, artworkENS: string): Promise<OnchainArtwork | null> {
+  const parsed = parseArtworkEns(artworkENS);
+  if (!parsed) return null;
+
+  const { readEnsTextRecords } = await import("@/lib/ens");
+  const collectionRecords = compactRecords(
+    await readEnsTextRecords({
+      name: parsed.collectionENS,
+      keys: [ENS_TEXT_KEYS.projectContract, ENS_TEXT_KEYS.contract],
+    }),
+  );
+  const contract = await resolveProjectContractForCollection(client, parsed.collectionENS, collectionRecords);
+  if (!contract) return null;
+
+  const [owner, tokenENS, metadataURI] = await Promise.all([
+    client.readContract({
+      address: contract,
+      abi: artNamespaceProjectAbi,
+      functionName: "ownerOf",
+      args: [BigInt(parsed.tokenId)],
+    }),
+    client.readContract({
+      address: contract,
+      abi: artNamespaceProjectAbi,
+      functionName: "tokenENS",
+      args: [BigInt(parsed.tokenId)],
+    }),
+    client.readContract({
+      address: contract,
+      abi: artNamespaceProjectAbi,
+      functionName: "tokenURI",
+      args: [BigInt(parsed.tokenId)],
+    }),
+  ]);
+
+  if (tokenENS.toLowerCase() !== artworkENS.toLowerCase()) return null;
+
+  const metadata = await fetchArtworkMetadata(metadataURI);
+
+  return {
+    tokenId: parsed.tokenId,
+    collectionENS: parsed.collectionENS,
+    contract,
+    owner,
+    metadataURI,
+    imageURI: metadata?.image,
+    features: metadataFeatures(metadata),
+  };
+}
+
 export function ArtworkProvenance({ artworkENS }: { artworkENS: string }) {
+  const publicClient = usePublicClient({ chainId: sepolia.id });
   const [records, setRecords] = useState<Record<string, string>>({});
   const [manifest, setManifest] = useState<ProvenanceManifest | null>(null);
+  const [onchainArtwork, setOnchainArtwork] = useState<OnchainArtwork | null>(null);
   const [status, setStatus] = useState("Reading ENS records");
 
   useEffect(() => {
+    let cancelled = false;
+
     async function load() {
       const local = loadArtwork(artworkENS);
-      if (local) setManifest(local);
+      let nextManifest = local;
+      let nextRecords: Record<string, string> = {};
+
+      if (local && !cancelled) setManifest(local);
 
       try {
         const { readEnsTextRecords } = await import("@/lib/ens");
-        const ensRecords = await readEnsTextRecords({
+        const ensRecords = compactRecords(await readEnsTextRecords({
           name: artworkENS,
           keys: [
             ENS_TEXT_KEYS.tokenId,
@@ -34,25 +134,49 @@ export function ArtworkProvenance({ artworkENS }: { artworkENS: string }) {
             ENS_TEXT_KEYS.contract,
             ENS_TEXT_KEYS.manifestURI,
           ],
-        });
-        setRecords(ensRecords);
+        }));
+        nextRecords = ensRecords;
+        if (!cancelled) setRecords(ensRecords);
         const manifestUri = ensRecords[ENS_TEXT_KEYS.manifestURI];
         if (manifestUri) {
           const response = await fetch(walrusProxyUrl(manifestUri));
           if (response.ok) {
-            setManifest((await response.json()) as ProvenanceManifest);
+            nextManifest = (await response.json()) as ProvenanceManifest;
+            if (!cancelled) setManifest(nextManifest);
           }
         }
-        setStatus("ENS and Walrus records loaded");
+        if (!cancelled) {
+          setStatus(Object.keys(ensRecords).length ? "ENS and Walrus records loaded" : local ? "Showing locally cached provenance" : "No ENS artwork records found");
+        }
       } catch {
-        setStatus("Showing locally cached provenance");
+        if (!cancelled) setStatus(local ? "Showing locally cached provenance" : "ENS records unavailable");
+      }
+
+      if (publicClient && (!nextManifest || !nextRecords[ENS_TEXT_KEYS.renderURI])) {
+        const onchain = await readOnchainArtwork(publicClient, artworkENS).catch(() => null);
+        if (onchain && !cancelled) {
+          setOnchainArtwork(onchain);
+          setRecords((current) => ({
+            ...current,
+            [ENS_TEXT_KEYS.tokenId]: String(onchain.tokenId),
+            [ENS_TEXT_KEYS.metadataURI]: onchain.metadataURI,
+            ...(onchain.imageURI ? { [ENS_TEXT_KEYS.renderURI]: onchain.imageURI } : {}),
+            [ENS_TEXT_KEYS.projectContract]: onchain.contract,
+            [ENS_TEXT_KEYS.contract]: onchain.contract,
+          }));
+          setStatus("Loaded from on-chain token metadata; ENS artwork records are missing");
+        }
       }
     }
 
     void load();
-  }, [artworkENS]);
 
-  const renderURI = records[ENS_TEXT_KEYS.renderURI] || manifest?.renderURI;
+    return () => {
+      cancelled = true;
+    };
+  }, [artworkENS, publicClient]);
+
+  const renderURI = records[ENS_TEXT_KEYS.renderURI] || manifest?.renderURI || onchainArtwork?.imageURI;
 
   return (
     <main className="mx-auto max-w-7xl px-5 py-10">
@@ -95,6 +219,30 @@ export function ArtworkProvenance({ artworkENS }: { artworkENS: string }) {
                 </div>
               </dl>
             </div>
+          ) : onchainArtwork ? (
+            <div className="border border-line p-4">
+              <h2 className="font-serif text-2xl">On-chain Metadata</h2>
+              <dl className="mt-4 space-y-3 font-mono text-xs">
+                <div>
+                  <dt className="text-neutral-500">Collection</dt>
+                  <dd>{onchainArtwork.collectionENS}</dd>
+                </div>
+                <div>
+                  <dt className="text-neutral-500">Token</dt>
+                  <dd>{onchainArtwork.tokenId}</dd>
+                </div>
+                <div>
+                  <dt className="text-neutral-500">Owner</dt>
+                  <dd>{onchainArtwork.owner}</dd>
+                </div>
+                {Object.keys(onchainArtwork.features).length ? (
+                  <div>
+                    <dt className="text-neutral-500">Features</dt>
+                    <dd>{Object.entries(onchainArtwork.features).map(([key, value]) => `${key}: ${value}`).join(" / ")}</dd>
+                  </div>
+                ) : null}
+              </dl>
+            </div>
           ) : null}
 
           <div>
@@ -102,8 +250,8 @@ export function ArtworkProvenance({ artworkENS }: { artworkENS: string }) {
             <RecordTable records={records} />
           </div>
 
-          {manifest?.metadataURI ? (
-            <a className="inline-flex items-center gap-2 border border-ink px-4 py-2 text-sm hover:bg-paper" href={walrusDirectUrl(manifest.metadataURI)} target="_blank">
+          {manifest?.metadataURI || onchainArtwork?.metadataURI ? (
+            <a className="inline-flex items-center gap-2 border border-ink px-4 py-2 text-sm hover:bg-paper" href={walrusDirectUrl(manifest?.metadataURI || onchainArtwork!.metadataURI)} target="_blank">
               Open Metadata on Walrus <ExternalLink size={16} />
             </a>
           ) : null}

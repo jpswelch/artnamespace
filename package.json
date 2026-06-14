@@ -9,6 +9,7 @@
     "lint": "pnpm --filter @artnamespace/web lint",
     "test": "pnpm --filter @artnamespace/web test",
     "test:run": "pnpm --filter @artnamespace/web test:run",
+    "ens:check": "pnpm --filter @artnamespace/web ens:check",
     "contracts:test": "forge test --root contracts --offline",
     "contracts:build": "forge build --root contracts",
     "copy:p5": "pnpm --filter @artnamespace/web copy:p5"

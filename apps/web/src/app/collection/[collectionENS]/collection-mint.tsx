@@ -15,13 +15,14 @@ import { createAlgorithmBundle, samplePackage } from "@/lib/art/sample";
 import type { AlgorithmBundle, CollectionRecord, GeneratedOutput, ProvenanceManifest } from "@/lib/art/types";
 import { artNamespaceProjectAbi } from "@/lib/contracts/artnamespace";
 import { ENS_TEXT_KEYS, SEPOLIA_CHAIN_ID, getArtworkEns } from "@/lib/constants";
-import { SEPOLIA_NAME_WRAPPER, ensureNameWrapperApproval, isSepoliaNameWrapper } from "@/lib/ens-name-wrapper";
+import { SEPOLIA_NAME_WRAPPER, ensureNameWrapperSubnameAuthority, isSepoliaNameWrapper } from "@/lib/ens-name-wrapper";
 import { getResolverForName, writeEnsTextRecords } from "@/lib/ens";
 import { truncateMiddle } from "@/lib/format";
 import { loadCollection, saveArtwork } from "@/lib/local-cache";
 import { formatMintPrice } from "@/lib/price";
 import { resolveProjectContract } from "@/lib/project";
 import { uploadWalrusArtifact, walrusProxyUrl } from "@/lib/walrus";
+import { CollectionArtworks } from "./collection-artworks";
 
 function sameAddress(a?: string, b?: string) {
   return Boolean(a && b && a.toLowerCase() === b.toLowerCase());
@@ -213,16 +214,18 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
 
     try {
       if (isSepoliaNameWrapper(registrar)) {
-        setStatus("Approving package contract to create ENS artwork subnames");
-        await ensureNameWrapperApproval({
+        setStatus("Granting ArtNamespaceProject permission to create ENS token subnames");
+        await ensureNameWrapperSubnameAuthority({
           publicClient,
           walletClient,
           account: address,
+          parentName: collectionENS,
+          resolver,
           operator: projectContract,
         });
       }
 
-      setStatus("Configuring ENS artwork subname creation");
+      setStatus("Configuring ENS token subname creation");
       const parentNode = namehash(normalize(collectionENS));
       const tx = await walletClient.writeContract({
         account: address,
@@ -246,7 +249,7 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
         [ENS_TEXT_KEYS.subnameParentNode]: parentNode,
         [ENS_TEXT_KEYS.artworkResolver]: resolver,
       }));
-      setStatus("ENS artwork subname creation configured");
+      setStatus("ENS token subname creation configured");
 
       try {
         await writeEnsTextRecords({
@@ -400,7 +403,10 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
         args: [address, metadataUpload.uri, uniquenessHash],
         value: onchainPrice,
       });
-      await publicClient.waitForTransactionReceipt({ hash: tx });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: tx });
+      if (receipt.status !== "success") {
+        throw new Error("The mint transaction reverted.");
+      }
 
       saveArtwork({ ...manifest, artworkENS: finalArtworkENS });
       const nextArtworkAfterMint = await publicClient
@@ -436,11 +442,8 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
         setStatus("Mint complete");
         router.push(`/art/${finalArtworkENS}`);
       } catch {
-        setStatus("Mint complete; ENS artwork records were not written");
-        setError(
-          `Token ${tokenId} was minted, but ENS records for ${finalArtworkENS} were not written. ` +
-            "Use the wallet that owns that ENS subname to write records, or transfer the subname to this collector wallet.",
-        );
+        setStatus("Mint complete; showing on-chain token metadata");
+        router.push(`/art/${finalArtworkENS}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -521,13 +524,18 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
             {!projectContract ? <p className="mt-2 text-amber-800">Publish this package contract before live minting.</p> : null}
             {projectContract && !ensSubnameRegistrar ? (
               <p className="mt-2 text-amber-800">
-                ENS artwork subname creation is not configured yet. The package owner can configure the Sepolia ENS Name Wrapper below.
+                ENS token subname creation is not configured yet. The package owner can prepare the collection for mint-time token subnames below.
+              </p>
+            ) : null}
+            {projectContract && ensSubnameRegistrar ? (
+              <p className="mt-2 text-amber-800">
+                ENS token subname creation is configured. The collection ENS name must be wrapped and ArtNamespaceProject must be approved before minting.
               </p>
             ) : null}
             {error ? <p className="mt-2 text-red-700">{error}</p> : null}
           </div>
 
-          {projectContract && !ensSubnameRegistrar ? (
+          {projectContract && (!ensSubnameRegistrar || isProjectOwner) ? (
             <div className="border border-line p-4">
               <h2 className="font-serif text-2xl">ENS subnames</h2>
               {isProjectOwner ? (
@@ -546,7 +554,7 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
                     <p className="text-xs text-red-700">Enter a valid registrar address.</p>
                   ) : (
                     <p className="text-xs leading-5 text-neutral-600">
-                      Uses the Sepolia ENS Name Wrapper by default so minted works can become 001.collection.artist.eth.
+                      Uses the Sepolia Name Wrapper by default. ArtNamespace will wrap this collection name if needed, then grant ArtNamespaceProject permission to create 001, 002, and later token subnames.
                     </p>
                   )}
                   <label className="block text-xs uppercase tracking-wide text-neutral-500">Artwork resolver</label>
@@ -566,7 +574,7 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
                     onClick={() => void configureEnsSubnames()}
                   >
                     {configuringEns ? <Loader2 className="animate-spin" size={16} /> : null}
-                    Configure ENS Subnames
+                    Prepare ENS Subnames
                   </button>
                   {ensConfigError ? <p className="text-xs leading-5 text-red-700">{ensConfigError}</p> : null}
                 </div>
@@ -587,6 +595,8 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
           </div>
         </aside>
       </section>
+
+      {projectContract ? <CollectionArtworks projectContract={projectContract} refreshKey={previewTokenId} /> : null}
     </main>
   );
 }

@@ -9,6 +9,7 @@ import { type PublicClient, isAddress } from "viem";
 import { StatusPill } from "@/components/status-pill";
 import { artNamespaceFactoryAbi, artNamespaceProjectAbi } from "@/lib/contracts/artnamespace";
 import { getFactoryAddress } from "@/lib/constants";
+import { fetchArtworkMetadata } from "@/lib/art/metadata";
 import { truncateMiddle } from "@/lib/format";
 import { formatMintPrice } from "@/lib/price";
 import { useAccountDisplay } from "@/lib/use-account-display";
@@ -95,17 +96,6 @@ async function readProjectSummary(client: PublicClient, address: `0x${string}`):
   };
 }
 
-async function readMetadataImage(metadataURI: string) {
-  try {
-    const response = await fetch(walrusProxyUrl(metadataURI));
-    if (!response.ok) return undefined;
-    const metadata = (await response.json()) as { image?: string };
-    return metadata.image;
-  } catch {
-    return undefined;
-  }
-}
-
 async function readOwnedItems(client: PublicClient, wallet: `0x${string}`, project: ProjectSummary) {
   const tokenIds = Array.from({ length: Math.max(project.nextTokenId - 1, 0) }, (_, index) => index + 1);
   const items = await Promise.all(
@@ -142,7 +132,7 @@ async function readOwnedItems(client: PublicClient, wallet: `0x${string}`, proje
           tokenId,
           artworkENS,
           metadataURI,
-          imageURI: await readMetadataImage(metadataURI),
+          imageURI: (await fetchArtworkMetadata(metadataURI))?.image,
         };
       } catch {
         return null;

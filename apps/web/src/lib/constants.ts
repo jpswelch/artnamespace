@@ -37,6 +37,17 @@ export function getArtworkEns(tokenId: number, collectionEns = getCollectionEns(
   return `${tokenId.toString().padStart(3, "0")}.${collectionEns}`;
 }
 
+export function parseArtworkEns(artworkENS: string) {
+  const [label, ...collectionParts] = artworkENS.split(".");
+  const collectionENS = collectionParts.join(".");
+  if (!label || !collectionENS || !/^\d+$/.test(label)) return null;
+
+  const tokenId = Number(label);
+  if (!Number.isSafeInteger(tokenId) || tokenId < 1) return null;
+
+  return { tokenId, collectionENS };
+}
+
 export function getDropContractAddress() {
   return process.env.NEXT_PUBLIC_DROP_CONTRACT as `0x${string}` | undefined;
 }
