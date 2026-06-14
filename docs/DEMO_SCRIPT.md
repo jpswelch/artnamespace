@@ -14,7 +14,7 @@ ArtNamespace lets artists publish creative-code algorithms under an ENS name. Ea
 
 - Connect Sepolia wallet.
 - Show the configured artist ENS root.
-- Load the Curvefields sample package.
+- Load the Curvefields demo package.
 - Preview deterministic outputs.
 - Publish the algorithm bundle to Walrus.
 - Write collection records to `curvefields.<artistRoot>`.

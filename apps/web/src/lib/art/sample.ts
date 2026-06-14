@@ -110,8 +110,8 @@ export function samplePackage(artistENS = getArtistEnsRoot()): ArtPackage {
     manifest,
     paramsSchema: sampleParamsSchema,
     sketch: sampleSketch,
-    readme: "Curvefields sample collection for ArtNamespace.",
-    sourceName: "curvefields-sample",
+    readme: "Curvefields demo collection for ArtNamespace.",
+    sourceName: "curvefields-demo",
     bundleBytes: new TextEncoder().encode(payload),
   };
 }

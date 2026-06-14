@@ -17,6 +17,20 @@ describe("parseArtPackage", () => {
     expect(parsed.sketch).toContain("window.ArtNamespace");
   });
 
+  it("parses a package wrapped in a top-level folder", async () => {
+    const zip = new JSZip();
+    zip.file("lumenloom/manifest.json", JSON.stringify({ ...sampleManifest("knicks-won.eth"), name: "Lumen Loom", slug: "lumenloom" }));
+    zip.file("lumenloom/params.schema.json", JSON.stringify(sampleParamsSchema));
+    zip.file("lumenloom/sketch.js", sampleSketch);
+    zip.file("__MACOSX/lumenloom/._manifest.json", "");
+    const file = new File([await zip.generateAsync({ type: "blob" })], "lumenloom.zip");
+
+    const parsed = await parseArtPackage(file);
+
+    expect(parsed.manifest.name).toBe("Lumen Loom");
+    expect(parsed.manifest.slug).toBe("lumenloom");
+  });
+
   it("rejects a package missing required files", async () => {
     const zip = new JSZip();
     zip.file("manifest.json", "{}");

@@ -6,6 +6,7 @@ import { Check, FileUp, Loader2, Wand2 } from "lucide-react";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import { sepolia } from "wagmi/chains";
 import { formatEther, isAddress, zeroAddress } from "viem";
+import { namehash, normalize } from "viem/ens";
 import { RecordTable } from "@/components/record-table";
 import { StatusPill } from "@/components/status-pill";
 import { createAlgorithmBundle, samplePackage } from "@/lib/art/sample";
@@ -13,13 +14,28 @@ import { packageHash, parseArtPackage } from "@/lib/art/package";
 import type { ArtPackage, CollectionRecord } from "@/lib/art/types";
 import { artNamespaceFactoryAbi, artNamespaceProjectAbi } from "@/lib/contracts/artnamespace";
 import { ENS_TEXT_KEYS, getCollectionEns, getFactoryAddress } from "@/lib/constants";
-import { readEnsTextRecords, writeEnsTextRecords } from "@/lib/ens";
+import { getResolverForName, publicResolverAbi, readEnsTextRecords, writeEnsTextRecords } from "@/lib/ens";
 import { loadCollection, saveCollection } from "@/lib/local-cache";
 import { truncateMiddle } from "@/lib/format";
 import { parseMintPriceEth } from "@/lib/price";
 import { collectionSymbol, resolveProjectContract } from "@/lib/project";
 import { useSepoliaEnsName } from "@/lib/use-sepolia-ens-name";
 import { uploadWalrusArtifact } from "@/lib/walrus";
+
+function normalizeEnsInput(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  try {
+    return normalize(trimmed);
+  } catch {
+    return "";
+  }
+}
+
+function sameAddress(a?: string, b?: string) {
+  return Boolean(a && b && a.toLowerCase() === b.toLowerCase());
+}
 
 export function CreateFlow() {
   const [pkg, setPkg] = useState<ArtPackage | null>(null);
@@ -28,12 +44,17 @@ export function CreateFlow() {
   const [publishing, setPublishing] = useState(false);
   const [published, setPublished] = useState<CollectionRecord | null>(null);
   const [mintPriceInputEth, setMintPriceInputEth] = useState("0");
+  const [creatorEnsOverride, setCreatorEnsOverride] = useState<{ address?: `0x${string}`; value: string } | null>(null);
   const { address } = useAccount();
   const { ensName, isLoading: loadingEnsName } = useSepoliaEnsName(address);
   const publicClient = usePublicClient({ chainId: sepolia.id });
   const { data: walletClient } = useWalletClient({ chainId: sepolia.id });
 
-  const creatorEns = ensName || "";
+  const overrideApplies = Boolean(creatorEnsOverride && creatorEnsOverride.address?.toLowerCase() === address?.toLowerCase());
+  const creatorEnsInput = overrideApplies && creatorEnsOverride ? creatorEnsOverride.value : ensName || "";
+  const creatorEns = useMemo(() => normalizeEnsInput(creatorEnsInput), [creatorEnsInput]);
+  const creatorEnsText = creatorEnsInput.trim();
+  const invalidCreatorEns = Boolean(creatorEnsText && !creatorEns);
   const manifestForAccount = useMemo(
     () =>
       pkg
@@ -48,15 +69,20 @@ export function CreateFlow() {
   const activePublished = published?.collectionENS === collectionEns ? published : null;
   const algorithmHash = pkg ? packageHash(pkg) : null;
   const factory = getFactoryAddress();
-  const missingCreatorEns = Boolean(address && !loadingEnsName && !ensName);
+  const missingCreatorEns = Boolean(address && !loadingEnsName && !creatorEns && !creatorEnsText);
+  const creatorEnsHasProblem = Boolean(address && (missingCreatorEns || invalidCreatorEns));
   const creatorEnsStatus = !address
-    ? "Connect a wallet to resolve the creator Sepolia ENS name."
-    : loadingEnsName
-      ? "Checking the connected wallet for a Sepolia ENS name."
-      : ensName
-        ? `Publishing under ${ensName} on Sepolia.`
-        : "No Sepolia ENS name was found for this wallet. Register or configure a Sepolia ENS name before creating a collection.";
-  const canPublish = Boolean(pkg && address && ensName && !loadingEnsName && !publishing && !activePublished);
+    ? "Connect a wallet, then enter the creator Sepolia ENS root."
+    : invalidCreatorEns
+      ? "Enter a valid Sepolia ENS name, such as artnamespace-demo.eth."
+      : creatorEns
+        ? creatorEns === ensName
+          ? `Publishing under ${creatorEns} on Sepolia.`
+          : `Publishing under ${creatorEns} on Sepolia. ENS write access will be checked when you publish.`
+        : loadingEnsName
+          ? "Checking reverse ENS. You can enter a Sepolia ENS name manually if it has not updated yet."
+          : "No Sepolia reverse ENS name was found. Enter a Sepolia ENS name this wallet owns or manages.";
+  const canPublish = Boolean(pkg && address && creatorEns && !publishing && !activePublished);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,13 +94,18 @@ export function CreateFlow() {
       const local = loadCollection();
       const matchingLocal = local?.collectionENS === collectionEns ? local : null;
 
-      if (matchingLocal?.contract) {
+      if (matchingLocal?.contract && sameAddress(matchingLocal.factory, factory)) {
         if (!cancelled) {
           setPublished(matchingLocal);
           setMintPriceInputEth(formatEther(BigInt(matchingLocal.mintPriceWei || "0")));
           setStatus("Collection already published");
         }
         return;
+      }
+
+      if (matchingLocal?.contract && !sameAddress(matchingLocal.factory, factory) && !cancelled) {
+        setPublished(null);
+        setStatus("Collection has older publish records; publish again to relink it to the current factory");
       }
 
       if (!publicClient) return;
@@ -104,6 +135,7 @@ export function CreateFlow() {
 
         const ensFactory = records[ENS_TEXT_KEYS.factory];
         const restoredFactory = ensFactory && isAddress(ensFactory) ? (ensFactory as `0x${string}`) : factory;
+        const isCurrentFactoryRecord = sameAddress(restoredFactory, factory);
         const restored: CollectionRecord = {
           artistENS: records[ENS_TEXT_KEYS.creator] || accountManifest.artistENS,
           collectionENS: collectionEns,
@@ -119,15 +151,33 @@ export function CreateFlow() {
           publishedAt: matchingLocal?.publishedAt || new Date().toISOString(),
         };
 
-        saveCollection(restored);
+        const projectOwner = isCurrentFactoryRecord
+          ? await publicClient.readContract({
+              address: projectContract,
+              abi: artNamespaceProjectAbi,
+              functionName: "owner",
+            })
+          : undefined;
+        const isOwnedByCurrentWallet = sameAddress(projectOwner, address);
 
-        if (!cancelled) {
+        if (isCurrentFactoryRecord && isOwnedByCurrentWallet) {
+          saveCollection(restored);
+        }
+
+        if (!cancelled && isCurrentFactoryRecord && isOwnedByCurrentWallet) {
           setPublished(restored);
           setMintPriceInputEth(formatEther(BigInt(restored.mintPriceWei || "0")));
           setStatus("Collection already published");
+        } else if (!cancelled && isCurrentFactoryRecord) {
+          setPublished(null);
+          setStatus("Collection already exists in the current factory under another wallet");
+          setError("Connect the package owner wallet or use a different package slug/ENS subname.");
+        } else if (!cancelled) {
+          setPublished(null);
+          setStatus("Collection exists in ENS with an older factory; publish again to relink it");
         }
       } catch {
-        if (!cancelled && matchingLocal) {
+        if (!cancelled && matchingLocal && sameAddress(matchingLocal.factory, factory)) {
           setPublished(matchingLocal);
           setMintPriceInputEth(formatEther(BigInt(matchingLocal.mintPriceWei || "0")));
           setStatus("Collection already published");
@@ -140,10 +190,12 @@ export function CreateFlow() {
     return () => {
       cancelled = true;
     };
-  }, [collectionEns, factory, manifestForAccount, publicClient]);
+  }, [address, collectionEns, factory, manifestForAccount, publicClient]);
 
   async function onUpload(file: File) {
     setError(null);
+    setPkg(null);
+    setPublished(null);
     setStatus("Validating ZIP package");
     try {
       const parsed = await parseArtPackage(file);
@@ -155,10 +207,10 @@ export function CreateFlow() {
         },
       });
       setMintPriceInputEth("0");
-      setPublished(null);
-      setStatus("Package validated");
+      setStatus(`${parsed.manifest.name} package loaded`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      setStatus("Package could not be loaded");
     }
   }
 
@@ -173,13 +225,17 @@ export function CreateFlow() {
       return;
     }
 
-    if (loadingEnsName) {
-      setError("Still checking the connected wallet for a Sepolia ENS name. Try again in a moment.");
+    if (creatorEnsText && !creatorEns) {
+      setError("Enter a valid Sepolia ENS name before publishing.");
       return;
     }
 
-    if (!ensName) {
-      setError("This creator wallet needs a Sepolia ENS name before publishing. Register or configure a Sepolia ENS name for this wallet, then reconnect and try again.");
+    if (!creatorEns) {
+      setError(
+        loadingEnsName
+          ? "Still checking reverse ENS. You can wait a moment or enter the Sepolia ENS name manually."
+          : "Enter a Sepolia ENS name this wallet owns or manages before publishing.",
+      );
       return;
     }
 
@@ -192,16 +248,38 @@ export function CreateFlow() {
     setError(null);
 
     try {
-      const targetCollectionEns = getCollectionEns(ensName, pkg.manifest.slug);
+      const targetCollectionEns = getCollectionEns(creatorEns, pkg.manifest.slug);
       const packageForPublish: ArtPackage = {
         ...pkg,
         manifest: {
           ...pkg.manifest,
-          artistENS: ensName,
+          artistENS: creatorEns,
         },
       };
       const bundle = createAlgorithmBundle(packageForPublish);
       const initialMintPriceWei = parseMintPriceEth(mintPriceInputEth);
+
+      setStatus(`Checking ENS write access for ${targetCollectionEns}`);
+      const resolver = await getResolverForName(publicClient, targetCollectionEns);
+      if (!resolver) {
+        throw new Error(
+          `No resolver is configured for ${targetCollectionEns}. Create or configure that collection subname first, then publish again.`,
+        );
+      }
+
+      try {
+        await publicClient.simulateContract({
+          account: address,
+          address: resolver,
+          abi: publicResolverAbi,
+          functionName: "setText",
+          args: [namehash(normalize(targetCollectionEns)), "artnamespace.preflight", "ok"],
+        });
+      } catch {
+        throw new Error(
+          `This wallet cannot write ENS text records for ${targetCollectionEns}. Make sure it owns or manages that ENS name, then try again.`,
+        );
+      }
 
       setStatus("Checking package ERC-721 contract");
       const collectionHash = await publicClient.readContract({
@@ -232,7 +310,7 @@ export function CreateFlow() {
             args: [
               packageForPublish.manifest.name,
               collectionSymbol(packageForPublish.manifest.name, packageForPublish.manifest.slug),
-              ensName,
+              creatorEns,
               targetCollectionEns,
               "walrus://preflight",
               bundle.packageHash,
@@ -264,7 +342,7 @@ export function CreateFlow() {
           args: [
             packageForPublish.manifest.name,
             collectionSymbol(packageForPublish.manifest.name, packageForPublish.manifest.slug),
-            ensName,
+            creatorEns,
             targetCollectionEns,
             codeURI,
             bundle.packageHash,
@@ -289,7 +367,12 @@ export function CreateFlow() {
         }
       } else {
         setStatus("Reusing existing package ERC-721 contract");
-        const [existingCodeURI, existingAlgorithmHash, existingMintPriceWei] = await Promise.all([
+        const [existingOwner, existingCodeURI, existingAlgorithmHash, existingMintPriceWei] = await Promise.all([
+          publicClient.readContract({
+            address: projectContract,
+            abi: artNamespaceProjectAbi,
+            functionName: "owner",
+          }),
           publicClient.readContract({
             address: projectContract,
             abi: artNamespaceProjectAbi,
@@ -306,6 +389,11 @@ export function CreateFlow() {
             functionName: "mintPriceWei",
           }),
         ]);
+        if (!sameAddress(existingOwner, address)) {
+          throw new Error(
+            `This collection already has a package contract owned by ${existingOwner}. Connect that wallet or use a different package slug/ENS subname.`,
+          );
+        }
         codeURI = existingCodeURI;
         effectiveAlgorithmHash = existingAlgorithmHash;
         effectiveMintPriceWei = existingMintPriceWei;
@@ -313,7 +401,7 @@ export function CreateFlow() {
       }
 
       const record: CollectionRecord = {
-        artistENS: ensName,
+        artistENS: creatorEns,
         collectionENS: targetCollectionEns,
         manifest: packageForPublish.manifest,
         algorithmHash: effectiveAlgorithmHash,
@@ -331,7 +419,7 @@ export function CreateFlow() {
         account: address,
         name: targetCollectionEns,
         records: {
-          [ENS_TEXT_KEYS.creator]: ensName,
+          [ENS_TEXT_KEYS.creator]: creatorEns,
           [ENS_TEXT_KEYS.collection]: packageForPublish.manifest.name,
           [ENS_TEXT_KEYS.algorithmHash]: effectiveAlgorithmHash,
           [ENS_TEXT_KEYS.codeURI]: codeURI,
@@ -385,13 +473,14 @@ export function CreateFlow() {
             <button
               className="mt-3 inline-flex items-center gap-2 border border-line px-3 py-2 text-sm hover:border-ink"
               onClick={() => {
-                setPkg(samplePackage(ensName || ""));
+                setError(null);
+                setPkg(samplePackage(creatorEns || ""));
                 setMintPriceInputEth("0");
                 setPublished(null);
-                setStatus("Sample package loaded");
+                setStatus("Demo package loaded");
               }}
             >
-              <Wand2 size={16} /> Load Sample Package
+              <Wand2 size={16} /> Load Demo Package
             </button>
           </div>
 
@@ -409,12 +498,17 @@ export function CreateFlow() {
             )}
             <label className="mt-4 block text-xs uppercase tracking-wide text-neutral-500">Creator Sepolia ENS</label>
             <input
-              className="mt-2 w-full border border-line p-2 font-mono text-sm disabled:bg-neutral-100"
-              disabled
-              placeholder={address ? "No Sepolia ENS found for connected wallet" : "Connect wallet to resolve Sepolia ENS"}
-              value={creatorEns}
+              className="mt-2 w-full border border-line p-2 font-mono text-sm"
+              disabled={!address || publishing}
+              onChange={(event) => {
+                setCreatorEnsOverride({ address, value: event.target.value });
+                setPublished(null);
+                setError(null);
+              }}
+              placeholder={address ? "artnamespace-demo.eth" : "Connect wallet to enter Sepolia ENS"}
+              value={creatorEnsInput}
             />
-            <p className={`mt-2 text-xs leading-5 ${missingCreatorEns ? "text-red-700" : "text-neutral-600"}`}>
+            <p className={`mt-2 text-xs leading-5 ${creatorEnsHasProblem ? "text-red-700" : "text-neutral-600"}`}>
               {creatorEnsStatus}
               {missingCreatorEns ? (
                 <>

@@ -7,18 +7,19 @@ const REQUIRED_FILES = ["manifest.json", "sketch.js", "params.schema.json"];
 export async function parseArtPackage(file: File): Promise<ArtPackage> {
   const buffer = new Uint8Array(await file.arrayBuffer());
   const zip = await JSZip.loadAsync(buffer);
-  const missing = REQUIRED_FILES.filter((name) => !zip.file(name));
+  const packageRoot = resolvePackageRoot(zip);
+  const missing = REQUIRED_FILES.filter((name) => !zip.file(`${packageRoot}${name}`));
 
   if (missing.length > 0) {
     throw new Error(`Missing required file${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`);
   }
 
-  const manifest = JSON.parse(await zip.file("manifest.json")!.async("text")) as ArtManifest;
-  const paramsSchema = JSON.parse(await zip.file("params.schema.json")!.async("text")) as ParamSchema;
-  const sketch = await zip.file("sketch.js")!.async("text");
-  const readme = zip.file("README.md") ? await zip.file("README.md")!.async("text") : undefined;
-  const previewDataUrl = zip.file("preview.png")
-    ? `data:image/png;base64,${await zip.file("preview.png")!.async("base64")}`
+  const manifest = JSON.parse(await zip.file(`${packageRoot}manifest.json`)!.async("text")) as ArtManifest;
+  const paramsSchema = JSON.parse(await zip.file(`${packageRoot}params.schema.json`)!.async("text")) as ParamSchema;
+  const sketch = await zip.file(`${packageRoot}sketch.js`)!.async("text");
+  const readme = zip.file(`${packageRoot}README.md`) ? await zip.file(`${packageRoot}README.md`)!.async("text") : undefined;
+  const previewDataUrl = zip.file(`${packageRoot}preview.png`)
+    ? `data:image/png;base64,${await zip.file(`${packageRoot}preview.png`)!.async("base64")}`
     : undefined;
 
   validateManifest(manifest);
@@ -37,6 +38,25 @@ export async function parseArtPackage(file: File): Promise<ArtPackage> {
     sourceName: file.name,
     bundleBytes: buffer,
   };
+}
+
+function resolvePackageRoot(zip: JSZip) {
+  if (REQUIRED_FILES.every((name) => zip.file(name))) {
+    return "";
+  }
+
+  const prefixes = new Set<string>();
+
+  for (const path of Object.keys(zip.files)) {
+    if (path.startsWith("__MACOSX/") || path.endsWith("/")) continue;
+
+    const match = REQUIRED_FILES.find((name) => path.endsWith(`/${name}`));
+    if (!match) continue;
+
+    prefixes.add(path.slice(0, -match.length));
+  }
+
+  return Array.from(prefixes).find((prefix) => REQUIRED_FILES.every((name) => zip.file(`${prefix}${name}`))) || "";
 }
 
 export function validateManifest(manifest: ArtManifest) {

@@ -4,7 +4,7 @@ ArtNamespace is built as a controlled live hackathon demo:
 
 - Next.js App Router frontend and API routes in `apps/web`
 - Foundry factory and per-package ERC-721 contracts in `contracts`
-- Curvefields sample package in `sample-art/curvefields`
+- Curvefields demo package in `sample-art/curvefields`
 - Walrus Testnet storage through HTTP publisher/aggregator routes
 - ENS text-record reads/writes on a new Sepolia artist namespace
 
