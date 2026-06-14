@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { Database, EyeOff, Loader2, Sparkles } from "lucide-react";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import { sepolia } from "wagmi/chains";
-import { zeroAddress } from "viem";
+import { isAddress, zeroAddress } from "viem";
+import { namehash, normalize } from "viem/ens";
 import { RenderFrame } from "@/components/render-frame";
 import { RecordTable } from "@/components/record-table";
 import { StatusPill } from "@/components/status-pill";
@@ -14,12 +15,22 @@ import { createAlgorithmBundle, samplePackage } from "@/lib/art/sample";
 import type { AlgorithmBundle, CollectionRecord, GeneratedOutput, ProvenanceManifest } from "@/lib/art/types";
 import { artNamespaceProjectAbi } from "@/lib/contracts/artnamespace";
 import { ENS_TEXT_KEYS, SEPOLIA_CHAIN_ID, getArtworkEns } from "@/lib/constants";
-import { writeEnsTextRecords } from "@/lib/ens";
+import { getResolverForName, writeEnsTextRecords } from "@/lib/ens";
 import { truncateMiddle } from "@/lib/format";
 import { loadCollection, saveArtwork } from "@/lib/local-cache";
 import { formatMintPrice } from "@/lib/price";
 import { resolveProjectContract } from "@/lib/project";
 import { uploadWalrusArtifact, walrusProxyUrl } from "@/lib/walrus";
+
+function sameAddress(a?: string, b?: string) {
+  return Boolean(a && b && a.toLowerCase() === b.toLowerCase());
+}
+
+function normalizeOptionalAddress(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return isAddress(trimmed) ? (trimmed as `0x${string}`) : undefined;
+}
 
 export function CollectionMint({ collectionENS }: { collectionENS: string }) {
   const router = useRouter();
@@ -36,8 +47,13 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
   const [previewTokenId, setPreviewTokenId] = useState(1);
   const [contractNextArtworkENS, setContractNextArtworkENS] = useState<string | null>(null);
   const [projectContract, setProjectContract] = useState<`0x${string}` | undefined>();
+  const [projectOwner, setProjectOwner] = useState<`0x${string}` | undefined>();
   const [mintPriceWei, setMintPriceWei] = useState<bigint>(0n);
   const [ensSubnameRegistrar, setEnsSubnameRegistrar] = useState<`0x${string}` | undefined>();
+  const [ensRegistrarInput, setEnsRegistrarInput] = useState("");
+  const [ensResolverInput, setEnsResolverInput] = useState("");
+  const [configuringEns, setConfiguringEns] = useState(false);
+  const [ensConfigError, setEnsConfigError] = useState<string | null>(null);
 
   const nextSeed = useMemo(() => createSeed(`${collectionENS}-${previewTokenId}`), [collectionENS, previewTokenId]);
   const params = useMemo(() => generateParams(bundle.paramsSchema, nextSeed), [bundle.paramsSchema, nextSeed]);
@@ -45,6 +61,11 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
   const artworkENS = contractNextArtworkENS || getArtworkEns(nextTokenId, collectionENS);
   const renderKey = `${artworkENS}-${nextSeed}-${bundle.packageHash}`;
   const output = renderedOutput?.key === renderKey ? renderedOutput.output : null;
+  const ensRegistrarAddress = normalizeOptionalAddress(ensRegistrarInput);
+  const ensResolverAddress = normalizeOptionalAddress(ensResolverInput);
+  const invalidEnsRegistrar = Boolean(ensRegistrarInput.trim() && !ensRegistrarAddress);
+  const invalidEnsResolver = Boolean(ensResolverInput.trim() && !ensResolverAddress);
+  const isProjectOwner = sameAddress(projectOwner, address);
 
   const handleRendered = useCallback(
     (generatedOutput: GeneratedOutput) => {
@@ -105,7 +126,7 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
       if (!projectContract || !publicClient) return;
 
       try {
-        const [tokenId, price] = await Promise.all([
+        const [tokenId, price, owner] = await Promise.all([
           publicClient.readContract({
             address: projectContract,
             abi: artNamespaceProjectAbi,
@@ -116,8 +137,13 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
             abi: artNamespaceProjectAbi,
             functionName: "mintPriceWei",
           }),
+          publicClient.readContract({
+            address: projectContract,
+            abi: artNamespaceProjectAbi,
+            functionName: "owner",
+          }),
         ]);
-        const [nextArtwork, registrar] = await Promise.all([
+        const [nextArtwork, registrar, configuredResolver] = await Promise.all([
           publicClient
             .readContract({
               address: projectContract,
@@ -132,11 +158,24 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
               functionName: "ensSubnameRegistrar",
             })
             .catch(() => zeroAddress),
+          publicClient
+            .readContract({
+              address: projectContract,
+              abi: artNamespaceProjectAbi,
+              functionName: "ensResolver",
+            })
+            .catch(() => zeroAddress),
         ]);
+        const collectionResolver =
+          configuredResolver === zeroAddress ? await getResolverForName(publicClient, collectionENS).catch(() => null) : configuredResolver;
+
         setPreviewTokenId(Number(tokenId));
         setContractNextArtworkENS(nextArtwork);
         setMintPriceWei(price);
+        setProjectOwner(owner);
         setEnsSubnameRegistrar(registrar === zeroAddress ? undefined : registrar);
+        setEnsRegistrarInput(registrar === zeroAddress ? "" : registrar);
+        setEnsResolverInput(collectionResolver || "");
       } catch {
         setStatus("Package contract was found, but it is not reachable on Sepolia yet");
       }
@@ -144,6 +183,81 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
 
     void loadProjectContract();
   }, [collectionENS, projectContract, publicClient]);
+
+  async function configureEnsSubnames() {
+    if (!address || !walletClient || !publicClient || !projectContract) {
+      setEnsConfigError("Connect the package owner wallet before configuring ENS subname creation.");
+      return;
+    }
+
+    if (!isProjectOwner) {
+      setEnsConfigError("Only the package contract owner can configure ENS subname creation.");
+      return;
+    }
+
+    const registrar = normalizeOptionalAddress(ensRegistrarInput);
+    if (!registrar) {
+      setEnsConfigError("Enter the collection subregistry or registrar address from ENS.");
+      return;
+    }
+
+    const resolver = normalizeOptionalAddress(ensResolverInput) || (await getResolverForName(publicClient, collectionENS).catch(() => null));
+    if (!resolver) {
+      setEnsConfigError("Enter an artwork resolver address, or configure a resolver on the collection ENS name first.");
+      return;
+    }
+
+    setConfiguringEns(true);
+    setEnsConfigError(null);
+
+    try {
+      setStatus("Configuring ENS artwork subname creation");
+      const parentNode = namehash(normalize(collectionENS));
+      const tx = await walletClient.writeContract({
+        account: address,
+        chain: sepolia,
+        address: projectContract,
+        abi: artNamespaceProjectAbi,
+        functionName: "configureEnsSubnames",
+        args: [registrar, parentNode, resolver, 0n, 0, 0n],
+      });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: tx });
+      if (receipt.status !== "success") {
+        throw new Error("The ENS subname configuration transaction reverted.");
+      }
+
+      setEnsSubnameRegistrar(registrar);
+      setEnsRegistrarInput(registrar);
+      setEnsResolverInput(resolver);
+      setEnsRecords((current) => ({
+        ...current,
+        [ENS_TEXT_KEYS.subnameRegistrar]: registrar,
+        [ENS_TEXT_KEYS.subnameParentNode]: parentNode,
+        [ENS_TEXT_KEYS.artworkResolver]: resolver,
+      }));
+      setStatus("ENS artwork subname creation configured");
+
+      try {
+        await writeEnsTextRecords({
+          publicClient,
+          walletClient,
+          account: address,
+          name: collectionENS,
+          records: {
+            [ENS_TEXT_KEYS.subnameRegistrar]: registrar,
+            [ENS_TEXT_KEYS.subnameParentNode]: parentNode,
+            [ENS_TEXT_KEYS.artworkResolver]: resolver,
+          },
+        });
+      } catch {
+        setStatus("ENS subname creation configured on the contract; collection text records were not updated");
+      }
+    } catch (err) {
+      setEnsConfigError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setConfiguringEns(false);
+    }
+  }
 
   async function mint() {
     if (!output) {
@@ -395,10 +509,58 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
             <p className="text-neutral-700">{status}</p>
             {!projectContract ? <p className="mt-2 text-amber-800">Publish this package contract before live minting.</p> : null}
             {projectContract && !ensSubnameRegistrar ? (
-              <p className="mt-2 text-amber-800">This package contract is not configured to create ENS artwork subnames yet.</p>
+              <p className="mt-2 text-amber-800">
+                ENS artwork subname creation is not configured yet. The contract can derive the name, but it needs the collection subregistry
+                or registrar address to create it during mint.
+              </p>
             ) : null}
             {error ? <p className="mt-2 text-red-700">{error}</p> : null}
           </div>
+
+          {projectContract && !ensSubnameRegistrar ? (
+            <div className="border border-line p-4">
+              <h2 className="font-serif text-2xl">ENS subnames</h2>
+              {isProjectOwner ? (
+                <div className="mt-4 space-y-3">
+                  <label className="block text-xs uppercase tracking-wide text-neutral-500">Collection subregistry or registrar</label>
+                  <input
+                    className="w-full border border-line p-2 font-mono text-xs"
+                    onChange={(event) => {
+                      setEnsRegistrarInput(event.target.value);
+                      setEnsConfigError(null);
+                    }}
+                    placeholder="0x..."
+                    value={ensRegistrarInput}
+                  />
+                  {invalidEnsRegistrar ? <p className="text-xs text-red-700">Enter a valid registrar address.</p> : null}
+                  <label className="block text-xs uppercase tracking-wide text-neutral-500">Artwork resolver</label>
+                  <input
+                    className="w-full border border-line p-2 font-mono text-xs"
+                    onChange={(event) => {
+                      setEnsResolverInput(event.target.value);
+                      setEnsConfigError(null);
+                    }}
+                    placeholder="Defaults to the collection resolver"
+                    value={ensResolverInput}
+                  />
+                  {invalidEnsResolver ? <p className="text-xs text-red-700">Enter a valid resolver address.</p> : null}
+                  <button
+                    className="inline-flex w-full items-center justify-center gap-2 border border-ink px-4 py-2 text-sm hover:bg-paper disabled:cursor-not-allowed disabled:border-neutral-300 disabled:text-neutral-400"
+                    disabled={configuringEns || !ensRegistrarAddress || invalidEnsResolver}
+                    onClick={() => void configureEnsSubnames()}
+                  >
+                    {configuringEns ? <Loader2 className="animate-spin" size={16} /> : null}
+                    Configure ENS Subnames
+                  </button>
+                  {ensConfigError ? <p className="text-xs leading-5 text-red-700">{ensConfigError}</p> : null}
+                </div>
+              ) : (
+                <p className="mt-3 text-sm leading-6 text-neutral-700">
+                  Connect the package owner wallet to configure the collection subregistry/registrar for mint-time ENS subname creation.
+                </p>
+              )}
+            </div>
+          ) : null}
 
           <div>
             <div className="mb-3 flex items-center gap-2">
