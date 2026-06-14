@@ -26,8 +26,8 @@ export function getArtistEnsRoot() {
   return process.env.NEXT_PUBLIC_ARTIST_ENS_ROOT || "artnamespace-demo.eth";
 }
 
-export function getCollectionEns(artistRoot = getArtistEnsRoot()) {
-  return `${DEFAULT_COLLECTION_SLUG}.${artistRoot}`;
+export function getCollectionEns(artistRoot = getArtistEnsRoot(), collectionSlug = DEFAULT_COLLECTION_SLUG) {
+  return `${collectionSlug}.${artistRoot}`;
 }
 
 export function getArtworkEns(tokenId: number, collectionEns = getCollectionEns()) {
