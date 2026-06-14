@@ -4,11 +4,15 @@ Target: under four minutes.
 
 ## 0:00-0:20 Problem
 
-Generative art platforms usually expose opaque token metadata. The NFT may exist, but the generated output rarely has a human-readable, resolvable identity tied to the artist namespace.
+Most generative art NFTs are kind of a black box. You get a token, maybe an image, maybe some metadata… but it usually doesn’t have a clear name, identity, or trail back to the artist.
+
+ArtNamespace fixes that.
 
 ## 0:20-0:45 Solution
 
-ArtNamespace lets artists publish creative-code algorithms under an ENS name. Each minted output becomes a unique NFT and receives its own ENS subname under the artist collection namespace.
+Artists publish their creative-code algorithms under their own ENS name. Then every minted output becomes both a unique NFT and gets its own ENS subname inside that artist’s collection.
+
+So instead of a random token ID floating around, each artwork becomes something you can actually name, resolve, and verify.
 
 ## 0:45-1:30 Artist Flow
 
@@ -37,4 +41,4 @@ ArtNamespace lets artists publish creative-code algorithms under an ENS name. Ea
 
 ## 3:20-4:00 Sponsor Fit
 
-ENS is the canonical naming and provenance layer. Walrus stores the creative recipe and generated artifacts. The result is a launch platform where every generated artwork is a named, resolvable digital object.
+ENS gives the art its identity and provenance. Walrus stores the code, recipe, metadata, and generated files. Together, they turn every generated artwork into a real, named digital object — not just another anonymous NFT in the void.
