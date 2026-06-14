@@ -20,7 +20,8 @@ contract ArtNamespaceFactoryTest {
                 "curvefields.artist.eth",
                 "walrus://algorithm-one",
                 keccak256("algorithm-one"),
-                512
+                512,
+                0
             )
         );
         ArtNamespaceProject second = ArtNamespaceProject(
@@ -31,7 +32,8 @@ contract ArtNamespaceFactoryTest {
                 "linefields.artist.eth",
                 "walrus://algorithm-two",
                 keccak256("algorithm-two"),
-                128
+                128,
+                0
             )
         );
 
@@ -60,19 +62,18 @@ contract ArtNamespaceFactoryTest {
         }
     }
 
-    function testDefaultFreeMint() public {
+    function testInitialFreeMint() public {
         ArtNamespaceProject project = createDefaultProject();
 
         uint256 tokenId = project.mintArtwork(address(this), "001.curvefields.artist.eth", "walrus://metadata", keccak256("free"));
 
-        assertEq(project.mintPriceWei(), 0, "default price");
+        assertEq(project.mintPriceWei(), 0, "initial price");
         assertEq(tokenId, 1, "token id");
         assertEq(project.ownerOf(tokenId), address(this), "owner");
     }
 
-    function testOwnerCanSetPriceAndPaidMintSucceeds() public {
-        ArtNamespaceProject project = createDefaultProject();
-        project.setMintPrice(1 ether);
+    function testInitialPaidMintSucceeds() public {
+        ArtNamespaceProject project = createDefaultProject(1 ether);
 
         uint256 tokenId = project.mintArtwork{value: 1 ether}(
             address(this),
@@ -87,8 +88,7 @@ contract ArtNamespaceFactoryTest {
     }
 
     function testUnderpaidMintFails() public {
-        ArtNamespaceProject project = createDefaultProject();
-        project.setMintPrice(1 ether);
+        ArtNamespaceProject project = createDefaultProject(1 ether);
 
         try project.mintArtwork{value: 0.5 ether}(
             address(this),
@@ -102,21 +102,9 @@ contract ArtNamespaceFactoryTest {
         }
     }
 
-    function testNonOwnerCannotSetPrice() public {
-        ArtNamespaceProject project = createDefaultProject();
-        PriceAttacker attacker = new PriceAttacker();
-
-        try attacker.setPrice(project, 1 ether) {
-            revert("expected non-owner update to fail");
-        } catch (bytes memory) {
-            assertTrue(true, "non-owner rejected");
-        }
-    }
-
     function testWithdrawSendsMintProceeds() public {
-        ArtNamespaceProject project = createDefaultProject();
+        ArtNamespaceProject project = createDefaultProject(1 ether);
         Receiver receiver = new Receiver();
-        project.setMintPrice(1 ether);
         project.mintArtwork{value: 1 ether}(
             address(this),
             "001.curvefields.artist.eth",
@@ -139,7 +127,8 @@ contract ArtNamespaceFactoryTest {
                 "tiny.artist.eth",
                 "walrus://algorithm",
                 keccak256("algorithm"),
-                1
+                1,
+                0
             )
         );
 
@@ -153,6 +142,10 @@ contract ArtNamespaceFactoryTest {
     }
 
     function createDefaultProject() internal returns (ArtNamespaceProject) {
+        return createDefaultProject(0);
+    }
+
+    function createDefaultProject(uint256 mintPriceWei) internal returns (ArtNamespaceProject) {
         return ArtNamespaceProject(
             factory.createProject(
                 "Curvefields",
@@ -161,7 +154,8 @@ contract ArtNamespaceFactoryTest {
                 "curvefields.artist.eth",
                 "walrus://algorithm",
                 keccak256("algorithm"),
-                512
+                512,
+                mintPriceWei
             )
         );
     }
@@ -183,12 +177,6 @@ contract ArtNamespaceFactoryTest {
     }
 
     receive() external payable {}
-}
-
-contract PriceAttacker {
-    function setPrice(ArtNamespaceProject project, uint256 price) external {
-        project.setMintPrice(price);
-    }
 }
 
 contract Receiver {

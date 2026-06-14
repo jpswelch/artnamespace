@@ -22,14 +22,15 @@ flowchart LR
 ## Data Flow
 
 1. Artist uploads or loads a p5.js-compatible package.
-2. The browser validates the package and renders deterministic previews in a sandboxed iframe.
+2. The browser validates the package and lets the artist choose the one-time fixed mint price.
 3. The extracted algorithm bundle is uploaded to Walrus.
-4. Collection text records are written to the pre-created ENS collection name.
-5. Collector renders the next deterministic output.
-6. Params, render, NFT metadata, and provenance manifest are uploaded to Walrus.
-7. The package ERC-721 is minted with the metadata URI, uniqueness hash, and current fixed mint price.
-8. Artwork text records are written to the pre-created ENS artwork name.
-9. The provenance page reads ENS and Walrus records back live.
+4. The factory deploys a per-package ERC-721 with that fixed mint price.
+5. Collection text records are written to the pre-created ENS collection name.
+6. Collector renders the next deterministic output.
+7. Params, render, NFT metadata, and provenance manifest are uploaded to Walrus.
+8. The package ERC-721 is minted with the metadata URI, uniqueness hash, and package fixed mint price.
+9. Artwork text records are written to the pre-created ENS artwork name.
+10. The provenance page reads ENS and Walrus records back live.
 
 ## ENS Mode
 

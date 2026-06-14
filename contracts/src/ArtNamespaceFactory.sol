@@ -21,7 +21,8 @@ contract ArtNamespaceFactory {
         string symbol,
         string algorithmURI,
         bytes32 algorithmHash,
-        uint256 maxSupply
+        uint256 maxSupply,
+        uint256 mintPriceWei
     );
 
     function createProject(
@@ -31,7 +32,8 @@ contract ArtNamespaceFactory {
         string calldata collectionENS,
         string calldata algorithmURI,
         bytes32 algorithmHash,
-        uint256 maxSupply
+        uint256 maxSupply,
+        uint256 mintPriceWei
     ) external returns (address project) {
         bytes32 collectionHash = hashCollectionENS(collectionENS);
         if (projectForCollectionHash[collectionHash] != address(0)) revert ProjectAlreadyExists(collectionHash);
@@ -48,7 +50,8 @@ contract ArtNamespaceFactory {
                 collectionENS,
                 algorithmURI,
                 algorithmHash,
-                maxSupply
+                maxSupply,
+                mintPriceWei
             )
         );
 
@@ -66,7 +69,8 @@ contract ArtNamespaceFactory {
             symbol,
             algorithmURI,
             algorithmHash,
-            maxSupply
+            maxSupply,
+            mintPriceWei
         );
     }
 

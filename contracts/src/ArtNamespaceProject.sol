@@ -36,7 +36,6 @@ contract ArtNamespaceProject {
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
     event Approval(address indexed owner, address indexed spender, uint256 indexed tokenId);
     event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
-    event MintPriceUpdated(uint256 mintPriceWei);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event Withdrawal(address indexed recipient, uint256 amount);
     event ArtworkMinted(
@@ -60,7 +59,8 @@ contract ArtNamespaceProject {
         string memory collectionENS_,
         string memory algorithmURI_,
         bytes32 algorithmHash_,
-        uint256 maxSupply_
+        uint256 maxSupply_,
+        uint256 mintPriceWei_
     ) {
         if (owner_ == address(0)) revert InvalidRecipient();
         if (maxSupply_ == 0) revert MaxSupplyReached();
@@ -73,12 +73,7 @@ contract ArtNamespaceProject {
         algorithmURI = algorithmURI_;
         algorithmHash = algorithmHash_;
         maxSupply = maxSupply_;
-        mintPriceWei = 0;
-    }
-
-    function setMintPrice(uint256 mintPriceWei_) external onlyOwner {
         mintPriceWei = mintPriceWei_;
-        emit MintPriceUpdated(mintPriceWei_);
     }
 
     function transferOwnership(address newOwner) external onlyOwner {
