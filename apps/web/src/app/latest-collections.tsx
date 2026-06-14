@@ -10,7 +10,6 @@ import { artNamespaceFactoryAbi, artNamespaceProjectAbi } from "@/lib/contracts/
 import { getFactoryAddress } from "@/lib/constants";
 import { truncateMiddle } from "@/lib/format";
 import { formatMintPrice } from "@/lib/price";
-import { previewForCollection } from "@/lib/package-previews";
 import { walrusProxyUrl } from "@/lib/walrus";
 import type { AlgorithmBundle } from "@/lib/art/types";
 
@@ -65,7 +64,7 @@ async function readCollection(client: NonNullable<ReturnType<typeof usePublicCli
     }),
   ]);
 
-  const previewSrc = (await readPackagePreview(algorithmURI).catch(() => undefined)) || previewForCollection(collectionENS);
+  const previewSrc = await readPackagePreview(algorithmURI).catch(() => undefined);
 
   return {
     address,
