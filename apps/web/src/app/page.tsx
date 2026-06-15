@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Database, Fingerprint, PackagePlus, Sparkles } from "lucide-react";
 import { LatestCollections } from "./latest-collections";
+import { LatestMintedWorks } from "./latest-minted-works";
 
 export default function HomePage() {
   return (
@@ -52,6 +53,7 @@ export default function HomePage() {
         </div>
       </section>
 
+      <LatestMintedWorks />
       <LatestCollections />
 
       <section className="mx-auto grid max-w-7xl gap-8 px-5 py-14 md:grid-cols-3">

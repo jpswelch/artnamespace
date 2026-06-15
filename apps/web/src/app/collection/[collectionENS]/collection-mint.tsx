@@ -579,46 +579,19 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
               </p>
             ) : null}
             {projectContract && ensSubnameRegistrar ? (
-              <p className="mt-2 text-amber-800">
-                ENS token subname creation is configured. ArtNamespaceProject must keep registrar permission on the collection registry before minting.
-              </p>
+              <p className="mt-2 text-neutral-700">ENS token subname creation is configured for minting.</p>
             ) : null}
             {error ? <p className="mt-2 text-red-700">{error}</p> : null}
           </div>
 
-          {projectContract && (!ensSubnameRegistrar || isProjectOwner) ? (
+          {projectContract && !ensSubnameRegistrar ? (
             <div className="border border-line p-4">
               <h2 className="font-serif text-2xl">ENS subnames</h2>
               {isProjectOwner ? (
                 <div className="mt-4 space-y-3">
-                  <label className="block text-xs uppercase tracking-wide text-neutral-500">ENSv2 collection registry override</label>
-                  <input
-                    className="w-full border border-line p-2 font-mono text-xs"
-                    onChange={(event) => {
-                      setEnsRegistrarInput(event.target.value);
-                      setEnsConfigError(null);
-                    }}
-                    placeholder="Leave blank for automatic ENSv2 setup"
-                    value={ensRegistrarInput}
-                  />
-                  {invalidEnsRegistrar ? (
-                    <p className="text-xs text-red-700">Enter a valid registry address.</p>
-                  ) : (
-                    <p className="text-xs leading-5 text-neutral-600">
-                      Leave blank to deploy/attach ENSv2 registries automatically. To use the old Name Wrapper path, explicitly enter {SEPOLIA_NAME_WRAPPER}.
-                    </p>
-                  )}
-                  <label className="block text-xs uppercase tracking-wide text-neutral-500">Artwork resolver</label>
-                  <input
-                    className="w-full border border-line p-2 font-mono text-xs"
-                    onChange={(event) => {
-                      setEnsResolverInput(event.target.value);
-                      setEnsConfigError(null);
-                    }}
-                    placeholder="Defaults to the collection resolver"
-                    value={ensResolverInput}
-                  />
-                  {invalidEnsResolver ? <p className="text-xs text-red-700">Enter a valid resolver address.</p> : null}
+                  <p className="text-sm leading-6 text-neutral-700">
+                    Prepare this collection once so minted tokens can create their own ENS names automatically.
+                  </p>
                   <button
                     className="inline-flex w-full items-center justify-center gap-2 border border-ink px-4 py-2 text-sm hover:bg-paper disabled:cursor-not-allowed disabled:border-neutral-300 disabled:text-neutral-400"
                     disabled={configuringEns || invalidEnsRegistrar || invalidEnsResolver}
@@ -627,6 +600,39 @@ export function CollectionMint({ collectionENS }: { collectionENS: string }) {
                     {configuringEns ? <Loader2 className="animate-spin" size={16} /> : null}
                     Prepare ENS Subnames
                   </button>
+                  <details className="border-t border-line pt-3">
+                    <summary className="cursor-pointer text-xs uppercase tracking-wide text-neutral-500">Advanced ENS settings</summary>
+                    <div className="mt-3 space-y-3">
+                      <label className="block text-xs uppercase tracking-wide text-neutral-500">ENSv2 collection registry override</label>
+                      <input
+                        className="w-full border border-line p-2 font-mono text-xs"
+                        onChange={(event) => {
+                          setEnsRegistrarInput(event.target.value);
+                          setEnsConfigError(null);
+                        }}
+                        placeholder="Leave blank for automatic ENSv2 setup"
+                        value={ensRegistrarInput}
+                      />
+                      {invalidEnsRegistrar ? (
+                        <p className="text-xs text-red-700">Enter a valid registry address.</p>
+                      ) : (
+                        <p className="text-xs leading-5 text-neutral-600">
+                          Leave blank for automatic ENSv2 setup. To use the old Name Wrapper path, enter {SEPOLIA_NAME_WRAPPER}.
+                        </p>
+                      )}
+                      <label className="block text-xs uppercase tracking-wide text-neutral-500">Artwork resolver</label>
+                      <input
+                        className="w-full border border-line p-2 font-mono text-xs"
+                        onChange={(event) => {
+                          setEnsResolverInput(event.target.value);
+                          setEnsConfigError(null);
+                        }}
+                        placeholder="Defaults to the collection resolver"
+                        value={ensResolverInput}
+                      />
+                      {invalidEnsResolver ? <p className="text-xs text-red-700">Enter a valid resolver address.</p> : null}
+                    </div>
+                  </details>
                   {ensConfigError ? <p className="text-xs leading-5 text-red-700">{ensConfigError}</p> : null}
                 </div>
               ) : (
