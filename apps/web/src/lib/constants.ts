@@ -1,3 +1,5 @@
+import { getAddress, isAddress, type Address } from "viem";
+
 export const SEPOLIA_CHAIN_ID = 11155111;
 
 export const ENS_TEXT_KEYS = {
@@ -25,8 +27,18 @@ export const ENS_TEXT_KEYS = {
 export const DEFAULT_COLLECTION_SLUG = "curvefields";
 export const DEFAULT_COLLECTION_NAME = "Curvefields";
 
+function envString(value: string | undefined) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function envAddress(value: string | undefined): Address | undefined {
+  const trimmed = envString(value);
+  return trimmed && isAddress(trimmed) ? getAddress(trimmed) : undefined;
+}
+
 export function getArtistEnsRoot() {
-  return process.env.NEXT_PUBLIC_ARTIST_ENS_ROOT || "artnamespace-demo.eth";
+  return envString(process.env.NEXT_PUBLIC_ARTIST_ENS_ROOT) || "artnamespace-demo.eth";
 }
 
 export function getCollectionEns(artistRoot = getArtistEnsRoot(), collectionSlug = DEFAULT_COLLECTION_SLUG) {
@@ -49,21 +61,21 @@ export function parseArtworkEns(artworkENS: string) {
 }
 
 export function getDropContractAddress() {
-  return process.env.NEXT_PUBLIC_DROP_CONTRACT as `0x${string}` | undefined;
+  return envAddress(process.env.NEXT_PUBLIC_DROP_CONTRACT);
 }
 
 export function getFactoryAddress() {
-  return process.env.NEXT_PUBLIC_ARTNAMESPACE_FACTORY as `0x${string}` | undefined;
+  return envAddress(process.env.NEXT_PUBLIC_ARTNAMESPACE_FACTORY);
 }
 
 export function getSepoliaRpcUrl() {
   return (
-    process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL ||
-    process.env.SEPOLIA_RPC_URL ||
+    envString(process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL) ||
+    envString(process.env.SEPOLIA_RPC_URL) ||
     "https://ethereum-sepolia-rpc.publicnode.com"
   );
 }
 
 export function getMainnetRpcUrl() {
-  return process.env.NEXT_PUBLIC_MAINNET_RPC_URL || "https://ethereum-rpc.publicnode.com";
+  return envString(process.env.NEXT_PUBLIC_MAINNET_RPC_URL) || "https://ethereum-rpc.publicnode.com";
 }
