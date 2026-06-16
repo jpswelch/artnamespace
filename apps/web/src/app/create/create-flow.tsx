@@ -747,38 +747,43 @@ export function CreateFlow() {
               }}
               value={mintPriceInputEth}
             />
-            <label className="mt-4 block text-xs uppercase tracking-wide text-neutral-500">ENSv2 collection registry override</label>
-            <input
-              className="mt-2 w-full border border-line p-2 font-mono text-sm disabled:bg-neutral-100"
-              disabled={Boolean(activePublished)}
-              onChange={(event) => {
-                setSubnameRegistrarInput(event.target.value);
-                setPublished(null);
-                setError(null);
-              }}
-              placeholder="Leave blank for automatic ENSv2 setup"
-              value={subnameRegistrarInput}
-            />
-            {invalidSubnameRegistrar ? (
-              <p className="mt-2 text-xs text-red-700">Enter a valid registry address.</p>
-            ) : (
-              <p className="mt-2 text-xs leading-5 text-neutral-600">
-                Leave blank to deploy/attach ENSv2 registries automatically. To use the old Name Wrapper path, explicitly enter {SEPOLIA_NAME_WRAPPER}.
-              </p>
-            )}
-            <label className="mt-4 block text-xs uppercase tracking-wide text-neutral-500">Artwork resolver</label>
-            <input
-              className="mt-2 w-full border border-line p-2 font-mono text-sm disabled:bg-neutral-100"
-              disabled={Boolean(activePublished)}
-              onChange={(event) => {
-                setArtworkResolverInput(event.target.value);
-                setPublished(null);
-                setError(null);
-              }}
-              placeholder="Defaults to the collection resolver"
-              value={artworkResolverInput}
-            />
-            {invalidArtworkResolver ? <p className="mt-2 text-xs text-red-700">Enter a valid resolver address.</p> : null}
+            <details className="mt-4 border-t border-line pt-4">
+              <summary className="cursor-pointer text-xs uppercase tracking-wide text-neutral-500">Advanced ENS settings</summary>
+              <div className="mt-3 space-y-3">
+                <label className="block text-xs uppercase tracking-wide text-neutral-500">ENSv2 collection registry override</label>
+                <input
+                  className="w-full border border-line p-2 font-mono text-sm disabled:bg-neutral-100"
+                  disabled={Boolean(activePublished)}
+                  onChange={(event) => {
+                    setSubnameRegistrarInput(event.target.value);
+                    setPublished(null);
+                    setError(null);
+                  }}
+                  placeholder="Leave blank for automatic ENSv2 setup"
+                  value={subnameRegistrarInput}
+                />
+                {invalidSubnameRegistrar ? (
+                  <p className="text-xs text-red-700">Enter a valid registry address.</p>
+                ) : (
+                  <p className="text-xs leading-5 text-neutral-600">
+                    Leave blank for automatic ENSv2 setup. To use the old Name Wrapper path, enter {SEPOLIA_NAME_WRAPPER}.
+                  </p>
+                )}
+                <label className="block text-xs uppercase tracking-wide text-neutral-500">Artwork resolver</label>
+                <input
+                  className="w-full border border-line p-2 font-mono text-sm disabled:bg-neutral-100"
+                  disabled={Boolean(activePublished)}
+                  onChange={(event) => {
+                    setArtworkResolverInput(event.target.value);
+                    setPublished(null);
+                    setError(null);
+                  }}
+                  placeholder="Defaults to the collection resolver"
+                  value={artworkResolverInput}
+                />
+                {invalidArtworkResolver ? <p className="text-xs text-red-700">Enter a valid resolver address.</p> : null}
+              </div>
+            </details>
             <dl className="mt-4 space-y-2 font-mono text-xs">
               <div className="flex justify-between gap-3">
                 <dt>Package</dt>
