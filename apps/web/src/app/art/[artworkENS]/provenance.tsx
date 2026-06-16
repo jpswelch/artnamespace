@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ExternalLink } from "lucide-react";
 import { usePublicClient } from "wagmi";
 import { sepolia } from "wagmi/chains";
 import { zeroAddress, type PublicClient } from "viem";
@@ -13,7 +12,7 @@ import { ENS_TEXT_KEYS, getFactoryAddress, parseArtworkEns } from "@/lib/constan
 import { loadArtwork } from "@/lib/local-cache";
 import type { ProvenanceManifest } from "@/lib/art/types";
 import { resolveProjectContract } from "@/lib/project";
-import { walrusDirectUrl, walrusProxyUrl } from "@/lib/walrus";
+import { walrusProxyUrl } from "@/lib/walrus";
 
 type OnchainArtwork = {
   tokenId: number;
@@ -249,12 +248,6 @@ export function ArtworkProvenance({ artworkENS }: { artworkENS: string }) {
             <h2 className="mb-3 font-serif text-2xl">ENS text records</h2>
             <RecordTable records={records} />
           </div>
-
-          {manifest?.metadataURI || onchainArtwork?.metadataURI ? (
-            <a className="inline-flex items-center gap-2 border border-ink px-4 py-2 text-sm hover:bg-paper" href={walrusDirectUrl(manifest?.metadataURI || onchainArtwork!.metadataURI)} target="_blank">
-              Open Metadata on Walrus <ExternalLink size={16} />
-            </a>
-          ) : null}
         </aside>
       </section>
     </main>

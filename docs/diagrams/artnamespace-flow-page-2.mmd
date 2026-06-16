@@ -1,0 +1,36 @@
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant W as Web App
+    participant C as Sepolia (Factory + Project)
+    participant E as ENS
+    participant S as Walrus
+    participant L as Local Cache
+
+    rect rgb(255,248,240)
+    Note over U,S: Provenance view (/art/[artworkENS])
+    U->>W: Open artwork page
+    W->>L: Load cached manifest (if present)
+    W->>E: Read artwork ENS text records
+    W->>S: Fetch manifest + render via blob proxy
+    alt ENS records incomplete/missing
+      W->>C: Resolve project + read ownerOf/tokenENS/tokenURI
+      W->>S: Fetch token metadata image
+    end
+    W-->>U: Show render, manifest, ENS records, on-chain fallback
+    end
+
+    rect rgb(248,248,255)
+    Note over U,S: Home exploration (/)
+    U->>W: Open home
+    W->>C: Read factory allProjectsLength + allProjects
+    loop latest collections
+      W->>C: Read project name/artistENS/collectionENS/mint stats
+      W->>S: Fetch algorithm bundle preview
+    end
+    loop latest minted works
+      W->>C: Read ownerOf/tokenENS/tokenURI
+      W->>S: Fetch metadata/image
+    end
+    W-->>U: Display latest collections and latest works
+    end

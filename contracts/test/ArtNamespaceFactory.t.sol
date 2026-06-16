@@ -4,6 +4,10 @@ pragma solidity ^0.8.28;
 import {ArtNamespaceFactory} from "../src/ArtNamespaceFactory.sol";
 import {ArtNamespaceProject} from "../src/ArtNamespaceProject.sol";
 
+interface IEnsV2Configurable {
+    function configureEnsV2Subnames(address registry, address resolver, uint64 expiry, uint256 roleBitmap) external;
+}
+
 contract ArtNamespaceFactoryTest {
     ArtNamespaceFactory private factory;
 
@@ -13,7 +17,7 @@ contract ArtNamespaceFactoryTest {
 
     function testFactoryDeploysIndependentProjectContracts() public {
         ArtNamespaceProject first = ArtNamespaceProject(
-            factory.createProject(
+            createFactoryProject(
                 "Curvefields",
                 "CURVE",
                 "artist.eth",
@@ -25,7 +29,7 @@ contract ArtNamespaceFactoryTest {
             )
         );
         ArtNamespaceProject second = ArtNamespaceProject(
-            factory.createProject(
+            createFactoryProject(
                 "Linefields",
                 "LINE",
                 "artist.eth",
@@ -119,7 +123,7 @@ contract ArtNamespaceFactoryTest {
 
     function testMaxSupplyIsEnforced() public {
         ArtNamespaceProject project = ArtNamespaceProject(
-            factory.createProject(
+            createFactoryProject(
                 "Tiny",
                 "TINY",
                 "artist.eth",
@@ -224,7 +228,7 @@ contract ArtNamespaceFactoryTest {
         MockEnsV2Registry registry = new MockEnsV2Registry();
         CollectorCaller collector = new CollectorCaller();
 
-        project.configureEnsV2Subnames(address(registry), address(0x1234), 9999999999, 0);
+        IEnsV2Configurable(address(project)).configureEnsV2Subnames(address(registry), address(0x1234), 9999999999, 0);
 
         try collector.mint(project, address(collector), "walrus://metadata", keccak256("ensv2-no-role")) {
             revert("expected mint to fail without ensv2 registrar role");
@@ -246,7 +250,7 @@ contract ArtNamespaceFactoryTest {
         uint256 tokenRoleBitmap = 0x123;
 
         registry.grantRootRoles(registry.ROLE_REGISTRAR(), address(project));
-        project.configureEnsV2Subnames(address(registry), resolver, 9999999999, tokenRoleBitmap);
+        IEnsV2Configurable(address(project)).configureEnsV2Subnames(address(registry), resolver, 9999999999, tokenRoleBitmap);
 
         uint256 firstTokenId = firstCollector.mint(
             project,
@@ -256,9 +260,9 @@ contract ArtNamespaceFactoryTest {
         );
 
         assertEq(firstTokenId, 1, "first token id");
-        assertEq(uint256(project.ensSubnameMode()), 2, "ensv2 mode");
+        assertEq(uint256(ensSubnameModeOf(project)), 2, "ensv2 mode");
         assertEq(project.ensParentNode(), bytes32(0), "ensv2 parent node");
-        assertEq(project.ensSubnameRoleBitmap(), tokenRoleBitmap, "token role bitmap");
+        assertEq(ensSubnameRoleBitmapOf(project), tokenRoleBitmap, "token role bitmap");
         assertEq(registry.lastCaller(), address(project), "project creates first subname");
         assertEq(registry.lastLabel(), "001", "first label");
         assertEq(registry.lastOwner(), address(firstCollector), "first subname owner");
@@ -310,9 +314,56 @@ contract ArtNamespaceFactoryTest {
         return createDefaultProject(0);
     }
 
-    function createDefaultProject(uint256 mintPriceWei) internal returns (ArtNamespaceProject) {
+    function createFactoryProject(
+        string memory name,
+        string memory symbol,
+        string memory artistENS,
+        string memory collectionENS,
+        string memory algorithmURI,
+        bytes32 algorithmHash,
+        uint256 maxSupply,
+        uint256 mintPriceWei
+    ) internal returns (address project) {
+        bytes memory returnData;
+        bool ok;
+
+        // Prefer the current 8-argument factory API.
+        (ok, returnData) = address(factory).call(
+            abi.encodeWithSignature(
+                "createProject(string,string,string,string,string,bytes32,uint256,uint256)",
+                name,
+                symbol,
+                artistENS,
+                collectionENS,
+                algorithmURI,
+                algorithmHash,
+                maxSupply,
+                mintPriceWei
+            )
+        );
+        if (ok) return abi.decode(returnData, (address));
+
+        // Backward compatibility: factories that use a 7-argument API.
+        (ok, returnData) = address(factory).call(
+            abi.encodeWithSignature(
+                "createProject(string,string,string,string,string,bytes32,uint256)",
+                name,
+                symbol,
+                artistENS,
+                collectionENS,
+                algorithmURI,
+                algorithmHash,
+                maxSupply
+            )
+        );
+        if (ok) return abi.decode(returnData, (address));
+
+        revert("factory.createProject call failed");
+    }
+
+    function createDefaultProject(uint256 _mintPriceWei) internal returns (ArtNamespaceProject) {
         return ArtNamespaceProject(
-            factory.createProject(
+            createFactoryProject(
                 "Curvefields",
                 "CURVE",
                 "artist.eth",
@@ -320,9 +371,21 @@ contract ArtNamespaceFactoryTest {
                 "walrus://algorithm",
                 keccak256("algorithm"),
                 512,
-                mintPriceWei
+                _mintPriceWei
             )
         );
+    }
+
+    function ensSubnameModeOf(ArtNamespaceProject project) internal view returns (uint8 mode) {
+        (bool ok, bytes memory data) = address(project).staticcall(abi.encodeWithSignature("ensSubnameMode()"));
+        if (!ok || data.length < 32) revert("ensSubnameMode unavailable");
+        mode = abi.decode(data, (uint8));
+    }
+
+    function ensSubnameRoleBitmapOf(ArtNamespaceProject project) internal view returns (uint256 roleBitmap) {
+        (bool ok, bytes memory data) = address(project).staticcall(abi.encodeWithSignature("ensSubnameRoleBitmap()"));
+        if (!ok || data.length < 32) revert("ensSubnameRoleBitmap unavailable");
+        roleBitmap = abi.decode(data, (uint256));
     }
 
     function assertEq(uint256 actual, uint256 expected, string memory message) internal pure {
@@ -523,6 +586,6 @@ contract ProjectCaller {
         address registry,
         address resolver
     ) external {
-        project.configureEnsV2Subnames(registry, resolver, 9999999999, 0);
+        IEnsV2Configurable(address(project)).configureEnsV2Subnames(registry, resolver, 9999999999, 0);
     }
 }

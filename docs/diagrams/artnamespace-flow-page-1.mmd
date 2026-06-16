@@ -1,0 +1,46 @@
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant W as Web App
+    participant X as Wallet
+    participant C as Sepolia (Factory + Project)
+    participant E as ENS
+    participant S as Walrus
+
+    rect rgb(240,248,255)
+    Note over U,S: Publish collection (/create)
+    U->>W: Upload package / load sample
+    W->>E: Validate ENS ownership + resolver access
+    W->>C: Check existing projectForCollectionHash
+    alt New project
+      W->>S: Upload algorithm bundle
+      U->>X: Approve deploy
+      X->>C: Factory.createProject(...)
+      C-->>W: New Project contract
+    else Existing project
+      W->>C: Read owner + algorithmURI + mintPrice
+    end
+    U->>X: Approve ENS setup tx(s)
+    X->>C: configureEnsSubnames or configureEnsV2Subnames
+    W->>E: Write collection text records
+    W-->>U: Collection published
+    end
+
+    rect rgb(245,255,245)
+    Note over U,S: Mint artwork (/collection/[collectionENS])
+    U->>W: Open collection
+    W->>E: Read collection ENS records
+    W->>S: Fetch algorithm bundle
+    W->>C: Read nextTokenId + mintPrice + nextArtworkENS
+    W->>W: Generate hidden deterministic output
+    W->>S: Upload params JSON
+    W->>S: Upload rendered PNG
+    W->>S: Upload NFT metadata + provenance manifest
+    U->>X: Approve mint
+    X->>C: Project.mintArtwork(to, metadataURI, uniquenessHash)
+    opt ENS subname mode enabled
+      C->>E: Create artwork ENS subname
+    end
+    W->>E: Write artwork ENS text records
+    W-->>U: Mint complete + redirect to artwork page
+    end
