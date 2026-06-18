@@ -10,9 +10,9 @@ import { fetchArtworkMetadata } from "@/lib/art/metadata";
 import { artNamespaceFactoryAbi, artNamespaceProjectAbi } from "@/lib/contracts/artnamespace";
 import { getFactoryAddress } from "@/lib/constants";
 import { truncateMiddle } from "@/lib/format";
+import { latestMintedTokenIds } from "@/lib/project";
 import { walrusDirectUrl, walrusProxyUrl } from "@/lib/walrus";
 
-const MAX_TOKENS_PER_PROJECT = 3;
 const MAX_WORKS = 8;
 
 // TODO: Replace this best-effort contract scan with an ArtworkMinted event indexer/cache
@@ -155,8 +155,7 @@ export function LatestMintedWorks() {
         );
 
         const tokenReads = projects.flatMap((project) => {
-          const highestTokenId = project.nextTokenId - 1;
-          const tokenIds = Array.from({ length: Math.min(highestTokenId, MAX_TOKENS_PER_PROJECT) }, (_, index) => highestTokenId - index);
+          const tokenIds = latestMintedTokenIds(project.nextTokenId, MAX_WORKS);
           return tokenIds.map((tokenId) => readMintedWork(publicClient, project, tokenId));
         });
         const mintedWorks = (await Promise.all(tokenReads))

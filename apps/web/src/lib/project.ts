@@ -10,6 +10,13 @@ export function collectionSymbol(name: string, slug: string) {
   return candidate || "ART";
 }
 
+export function latestMintedTokenIds(nextTokenId: number, limit: number) {
+  const highestTokenId = Math.max(Math.trunc(nextTokenId) - 1, 0);
+  const safeLimit = Math.max(Math.trunc(limit), 0);
+
+  return Array.from({ length: Math.min(highestTokenId, safeLimit) }, (_, index) => highestTokenId - index);
+}
+
 export function resolveProjectContract(
   records: Record<string, string | undefined>,
   local?: CollectionRecord | null,
